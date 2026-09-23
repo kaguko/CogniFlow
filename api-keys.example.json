@@ -1,0 +1,4 @@
+{
+  "GEMINI_API_KEY": "YOUR_GEMINI_API_KEY_HERE",
+  "_comment": "Sao chép file này thành 'api-keys.json' hoặc sử dụng file '.env.local'. Cả hai file đều đã được cấu hình trong .gitignore để không bao giờ bị push lên Git."
+}
