@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { WhyFirstDecisionResult, ProjectContext } from '../types';
+import { WhyFirstDecisionResult } from '../entities/whyFirstDecisionResult';
+import { ProjectContext } from '../../projectContext/entities/projectContext';
 import {
   Lightbulb,
   Sparkles,
@@ -11,7 +12,7 @@ import {
   Brain,
   Quote,
 } from 'lucide-react';
-import { AudioPlayerButton } from './AudioPlayerButton';
+import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 
 interface WhyFirstDecisionCopilotProps {
   currentContext: ProjectContext;

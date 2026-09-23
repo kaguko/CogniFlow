@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
+import { LongTermGoal } from '../entities/longTermGoal';
 import {
-  LongTermGoal,
   GoalMilestone,
   GoalHorizon,
   GoalCategory,
-  MicroStep,
   GoalDriftStatus,
   GoalSprint,
-} from '../types';
+} from '../valueObjects';
+import { MicroStep } from '../../microStep/entities/microStep';
 import {
   Telescope,
   Sparkles,

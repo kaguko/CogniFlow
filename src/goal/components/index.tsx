@@ -1,2 +1,2 @@
 // Goal feature components
-export { GoalCanvasView } from '../../components/GoalCanvasView';
+export { GoalCanvasView } from './GoalCanvasView';

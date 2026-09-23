@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { BehavioralInsight, ProjectContext, MicroStep } from '../types';
+import { BehavioralInsight } from '../entities/behavioralInsight';
+import { ProjectContext } from '../../projectContext/entities/projectContext';
+import { MicroStep } from '../../microStep/entities/microStep';
 import {
   Activity,
   Brain,
@@ -26,7 +28,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { AudioPlayerButton } from './AudioPlayerButton';
+import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 
 interface BehavioralAnalyticsViewProps {
   behavioralInsights: BehavioralInsight;

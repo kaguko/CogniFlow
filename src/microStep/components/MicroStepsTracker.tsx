@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { MicroStep, ProjectContext, LongTermGoal, NanoStep } from '../types';
+import { MicroStep, NanoStep } from '../entities/microStep';
+import { ProjectContext } from '../../projectContext/entities/projectContext';
+import { LongTermGoal } from '../../goal/entities/longTermGoal';
 import {
   CheckSquare,
   Square,
@@ -27,8 +29,8 @@ import {
   Target,
   Link2,
 } from 'lucide-react';
-import { AudioPlayerButton } from './AudioPlayerButton';
-import { playCompletionAlert } from '../utils/audioPlayer';
+import { AudioPlayerButton } from '../../components/AudioPlayerButton';
+import { playCompletionAlert } from '../../utils/audioPlayer';
 
 interface MicroStepsTrackerProps {
   microSteps: MicroStep[];

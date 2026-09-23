@@ -1,44 +1,52 @@
 import React, { useState } from 'react';
-import {
-  ProjectContext,
-  PredictionPayload,
-  MicroStep,
-  LongTermGoal,
-  ZoomLevel,
-} from './types';
 import { DEFAULT_PRESET_CONTEXTS, INITIAL_PREDICTION_DATA, DEFAULT_LONG_TERM_GOALS } from './data/defaultPresets';
+
+// Domain Bounded Contexts - Public APIs
+import { ProjectContext, ContextEditorModal, ZoomLevel } from './projectContext';
+import { GoalCanvasView, useGoals, LongTermGoal } from './goal';
+import { PredictiveHorizonView, usePrediction, PredictionPayload } from './prediction';
+import { MicroStepsTracker, MicroStep } from './microStep';
+import { BottleneckRadarView } from './bottleneck';
+import { WhyFirstDecisionCopilot } from './decisionCopilot';
+import { BehavioralAnalyticsView } from './behavioral';
+
+// Shared Shell Components
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ZoomController } from './components/ZoomController';
-import { GoalCanvasView } from './components/GoalCanvasView';
-import { PredictiveHorizonView } from './components/PredictiveHorizonView';
-import { MicroStepsTracker } from './components/MicroStepsTracker';
-import { BottleneckRadarView } from './components/BottleneckRadarView';
-import { WhyFirstDecisionCopilot } from './components/WhyFirstDecisionCopilot';
-import { BehavioralAnalyticsView } from './components/BehavioralAnalyticsView';
 import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
-import { ContextEditorModal } from './components/ContextEditorModal';
 
 export default function App() {
   const [currentContext, setCurrentContext] = useState<ProjectContext>(DEFAULT_PRESET_CONTEXTS[0]);
-  const [prediction, setPrediction] = useState<PredictionPayload>(
-    INITIAL_PREDICTION_DATA.preset_refactor_auth
-  );
-  const [longTermGoals, setLongTermGoals] = useState<LongTermGoal[]>(DEFAULT_LONG_TERM_GOALS);
-  const [activeGoalId, setActiveGoalId] = useState<string>(DEFAULT_LONG_TERM_GOALS[0]?.id || '');
   const [currentZoom, setCurrentZoom] = useState<ZoomLevel>('micro_focus');
   const [activeTab, setActiveTab] = useState<string>('horizon');
-  const [isLoading, setIsLoading] = useState(false);
   const [isContextModalOpen, setIsContextModalOpen] = useState(false);
 
-  // Active goal object
-  const activeGoal = longTermGoals.find((g) => g.id === activeGoalId) || longTermGoals[0];
+  // Prediction Domain Hook
+  const { prediction, setPrediction, isLoading, fetchPrediction } = usePrediction({
+    initialData: INITIAL_PREDICTION_DATA.preset_refactor_auth,
+  });
 
-  // Calculate dynamic Goal Drift score (% of micro-steps unlinked to any goal)
-  const totalMicroSteps = prediction.microSteps.length;
-  const unlinkedSteps = prediction.microSteps.filter((s) => !s.goalId && !s.isAlignedWithGoal);
-  const currentDriftScore =
-    totalMicroSteps > 0 ? Math.round((unlinkedSteps.length / totalMicroSteps) * 100) : 0;
+  // Goal Domain Hook
+  const {
+    goals: longTermGoals,
+    activeGoalId,
+    activeGoal,
+    driftScore: currentDriftScore,
+    setActiveGoalId,
+    addGoal,
+    updateGoalProgress,
+    updateMilestoneProgress,
+  } = useGoals({
+    initialGoals: DEFAULT_LONG_TERM_GOALS,
+    microSteps: prediction.microSteps,
+    onAddMicroSteps: (initialSteps) => {
+      setPrediction((prev) => ({
+        ...prev,
+        microSteps: [...initialSteps, ...prev.microSteps],
+      }));
+    },
+  });
 
   // Zoom In - Zoom Out switcher handler
   const handleZoomChange = (level: ZoomLevel) => {
@@ -83,67 +91,16 @@ export default function App() {
     }));
   };
 
-  // Add a newly planned long term goal
-  const handleCreateGoal = (newGoal: LongTermGoal, initialSteps?: MicroStep[]) => {
-    setLongTermGoals((prev) => [newGoal, ...prev]);
-    setActiveGoalId(newGoal.id);
-    if (initialSteps && initialSteps.length > 0) {
-      setPrediction((prev) => ({
-        ...prev,
-        microSteps: [...initialSteps, ...prev.microSteps],
-      }));
-    }
-  };
-
-  const handleUpdateGoalProgress = (goalId: string, progress: number) => {
-    setLongTermGoals((prev) =>
-      prev.map((g) => (g.id === goalId ? { ...g, progress } : g))
-    );
-  };
-
-  // Trigger contextual future prediction via backend API
-  const handleRefreshPrediction = async (contextToPredict = currentContext) => {
-    try {
-      setIsLoading(true);
-      const res = await fetch('/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context: contextToPredict }),
-      });
-
-      if (!res.ok) {
-        throw new Error('Predict API error');
-      }
-
-      const data = await res.json();
-      if (data && data.timelines) {
-        setPrediction(data);
-      }
-    } catch (err) {
-      console.warn('Using intelligent local forecast engine fallback', err);
-      // Generate enhanced fallback tailored to the context
-      setPrediction((prev) => ({
-        ...prev,
-        strategicWhySummary: `Vấn đề thực sự của "${contextToPredict.title}" là giảm tải nhận thức và cô lập các biến số rủi ro. Thay vì cố gắng giải quyết toàn diện cùng lúc, hãy chia bài toán thành các phân vùng kiểm thử 10 phút.`,
-        timelines: prev.timelines.map((tl) => ({
-          ...tl,
-          probability: tl.pathType === 'optimal' ? 82 : tl.pathType === 'drift' ? 40 : 20,
-        })),
-      }));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const handleSelectPreset = (preset: ProjectContext) => {
     setCurrentContext(preset);
     if (INITIAL_PREDICTION_DATA[preset.id]) {
       setPrediction(INITIAL_PREDICTION_DATA[preset.id]);
     } else {
-      handleRefreshPrediction(preset);
+      fetchPrediction(preset);
     }
   };
 
+  // Micro-step interactions with domain logic synchronization
   const handleToggleComplete = (stepId: string) => {
     setPrediction((prev) => {
       const updatedSteps = prev.microSteps.map((step) => {
@@ -168,21 +125,8 @@ export default function App() {
             ? Math.round((completedGoalSteps / goalLinkedSteps.length) * 100)
             : 0;
 
-        setLongTermGoals((goals) =>
-          goals.map((g) =>
-            g.id === targetStep.goalId
-              ? {
-                  ...g,
-                  progress: Math.max(g.progress, newGoalProgress),
-                  milestones: g.milestones.map((m, idx) =>
-                    idx === 0
-                      ? { ...m, progress: Math.min(100, m.progress + 15) }
-                      : m
-                  ),
-                }
-              : g
-          )
-        );
+        updateGoalProgress(targetStep.goalId, newGoalProgress);
+        updateMilestoneProgress(targetStep.goalId, 0, 15);
       }
 
       return {
@@ -282,7 +226,7 @@ export default function App() {
 
   const handleSaveContext = (updatedContext: ProjectContext) => {
     setCurrentContext(updatedContext);
-    handleRefreshPrediction(updatedContext);
+    fetchPrediction(updatedContext);
   };
 
   const pendingMicroStepsCount = prediction.microSteps.filter((s) => !s.completed).length;
@@ -295,8 +239,8 @@ export default function App() {
       {/* 3-Zone Top Bar */}
       <Header
         currentContext={currentContext}
-        onOpenContextModal={() => setIsContextModalOpen(true)}
-        onRefreshPrediction={() => handleRefreshPrediction()}
+        onOpenContextModal={() => setIsContextModalOpen(false || true)}
+        onRefreshPrediction={() => fetchPrediction(currentContext)}
         isLoading={isLoading}
         activeTab={activeTab}
         setActiveTab={handleTabChange}
@@ -333,9 +277,9 @@ export default function App() {
             <GoalCanvasView
               goals={longTermGoals}
               activeGoalId={activeGoalId}
-              onSelectActiveGoal={(id) => setActiveGoalId(id)}
-              onCreateGoal={handleCreateGoal}
-              onUpdateGoalProgress={handleUpdateGoalProgress}
+              onSelectActiveGoal={(id: string) => setActiveGoalId(id)}
+              onCreateGoal={addGoal}
+              onUpdateGoalProgress={updateGoalProgress}
               onJumpToFocus={() => handleZoomChange('micro_focus')}
               currentMicroSteps={prediction.microSteps}
             />
@@ -346,7 +290,7 @@ export default function App() {
               currentContext={currentContext}
               prediction={prediction}
               onSelectOptimalTimeline={() => handleZoomChange('micro_focus')}
-              onRefreshPrediction={() => handleRefreshPrediction()}
+              onRefreshPrediction={() => fetchPrediction(currentContext)}
               isLoading={isLoading}
             />
           )}

@@ -1,6 +1,8 @@
 // Goal module exports
 export * from './entities/longTermGoal';
 export * from './valueObjects';
+export * from './components';
+export * from './hooks/useGoals';
 
 import type { LongTermGoal } from './entities/longTermGoal';
 import type { GoalDriftStatus } from './valueObjects';

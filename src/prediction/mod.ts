@@ -1,5 +1,7 @@
 // Prediction module exports
 export * from './valueObjects';
+export * from './components';
+export * from './hooks/usePrediction';
 
 export interface PredictionPayload {
   timelines: import('./valueObjects').FutureTimeline[];
@@ -14,7 +16,7 @@ export interface PredictionPayload {
 }
 
 export interface PredictionRequest {
-  context: import('../context/entities/projectContext').ProjectContext;
+  context: import('../projectContext/entities/projectContext').ProjectContext;
 }
 
 export function createPredictionPayload(params: {

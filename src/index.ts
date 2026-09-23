@@ -12,7 +12,7 @@ export * from './bottleneck/mod';
 export * from './riskMatrix/mod';
 export * from './decisionCopilot/mod';
 export * from './behavioral/mod';
-export * from './context/mod';
+export * from './projectContext/mod';
 
 // Legacy compatibility - deprecated, use feature modules directly
 // @deprecated Use specific feature domain imports instead

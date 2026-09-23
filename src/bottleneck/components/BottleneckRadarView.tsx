@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { BottleneckItem, RiskMatrixItem, BehavioralInsight, ProjectContext } from '../types';
+import { BottleneckItem } from '../entities/bottleneckItem';
+import { RiskMatrixItem } from '../../riskMatrix/entities/riskMatrixItem';
+import { BehavioralInsight } from '../../behavioral/entities/behavioralInsight';
+import { ProjectContext } from '../../projectContext/entities/projectContext';
 import {
   AlertTriangle,
   Flame,
@@ -13,7 +16,7 @@ import {
   Clock,
   Sparkles,
 } from 'lucide-react';
-import { AudioPlayerButton } from './AudioPlayerButton';
+import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 
 interface BottleneckRadarViewProps {
   bottlenecks: BottleneckItem[];

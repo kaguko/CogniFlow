@@ -1,6 +1,8 @@
 import React from 'react';
-import { ProjectContext, FutureTimeline, PredictionPayload } from '../types';
-import { AudioPlayerButton } from './AudioPlayerButton';
+import { ProjectContext } from '../../projectContext/entities/projectContext';
+import { FutureTimeline } from '../valueObjects';
+import { PredictionPayload } from '../mod';
+import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 import {
   Compass,
   CheckCircle2,

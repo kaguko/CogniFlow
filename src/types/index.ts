@@ -23,13 +23,13 @@ export type {
 };
 export type { LongTermGoal as LongTermGoalType } from '../goal/entities/longTermGoal';
 
-// Context domain
+// ProjectContext domain
 import type { 
   DomainType, 
   EnergyLevel,
   ZoomLevel 
-} from '../context/valueObjects';
-import type { ProjectContext } from '../context/entities/projectContext';
+} from '../projectContext/valueObjects';
+import type { ProjectContext } from '../projectContext/entities/projectContext';
 
 export type { 
   DomainType, 
@@ -37,7 +37,7 @@ export type {
   ZoomLevel,
   ProjectContext 
 };
-export type { ProjectContext as ProjectContextType } from '../context/entities/projectContext';
+export type { ProjectContext as ProjectContextType } from '../projectContext/entities/projectContext';
 
 // Prediction domain
 import type { 
