@@ -2,34 +2,36 @@ import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
 import firebaseAppletConfig from '../../firebase-applet-config.json';
 
+const rawConfig = (firebaseAppletConfig || {}) as Record<string, string | undefined>;
+
 const clientConfig = {
   apiKey:
     import.meta.env.VITE_FIREBASE_API_KEY ||
-    firebaseAppletConfig.apiKey ||
+    rawConfig.apiKey ||
     '',
   authDomain:
     import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
-    firebaseAppletConfig.authDomain ||
+    rawConfig.authDomain ||
     'platinum-totem-nlcf1.firebaseapp.com',
   projectId:
     import.meta.env.VITE_FIREBASE_PROJECT_ID ||
-    firebaseAppletConfig.projectId ||
+    rawConfig.projectId ||
     'platinum-totem-nlcf1',
   storageBucket:
     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
-    firebaseAppletConfig.storageBucket ||
+    rawConfig.storageBucket ||
     undefined,
   messagingSenderId:
     import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
-    firebaseAppletConfig.messagingSenderId ||
+    rawConfig.messagingSenderId ||
     undefined,
   appId:
     import.meta.env.VITE_FIREBASE_APP_ID ||
-    firebaseAppletConfig.appId ||
+    rawConfig.appId ||
     undefined,
   measurementId:
     import.meta.env.VITE_FIREBASE_MEASUREMENT_ID ||
-    firebaseAppletConfig.measurementId ||
+    rawConfig.measurementId ||
     undefined,
 };
 
