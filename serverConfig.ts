@@ -24,6 +24,9 @@ function resolveGeminiApiKey(): string | undefined {
   if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim() !== '') {
     return process.env.GEMINI_API_KEY.trim();
   }
+  if (process.env.VITE_GEMINI_API_KEY && process.env.VITE_GEMINI_API_KEY.trim() !== '') {
+    return process.env.VITE_GEMINI_API_KEY.trim();
+  }
 
   // Fallback check: untracked local api-keys.json
   const keysFilePath = path.resolve(__dirname, 'api-keys.json');

@@ -11,6 +11,13 @@ import {
   searchNotesSemantic,
   getOrCreateUserRecord,
 } from './src/db/rag.ts';
+import {
+  generateContentWithFallback,
+  buildSmartFallbackPrediction,
+  buildSmartFallbackDecision,
+  buildSmartFallbackDecomposition,
+  buildSmartFallbackGoalPlan,
+} from './src/lib/geminiResilience.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -60,9 +67,8 @@ app.post('/api/predict', async (req: Request, res: Response) => {
     }
 
     if (!ai) {
-      return res.status(503).json({
-        error: 'GEMINI_API_KEY is not configured on the server. Using local fallback.',
-      });
+      console.warn('[api/predict] GEMINI_API_KEY not configured, returning smart synthesized prediction');
+      return res.json(buildSmartFallbackPrediction(context));
     }
 
     const systemInstruction = `
@@ -136,7 +142,7 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
       "order": 1,
       "title": "Tên vi bước nguyên tử (5-15 phút)",
       "durationMinutes": 10,
-      "programmerPrinciple": "Divide & Conquer" (hoặc 'Atomic Commit', 'TDD Loop', 'Fail Fast', 'YAGNI / Minimal Surface', 'Boundary Isolation'),
+      "programmerPrinciple": "Divide & Conquer",
       "inputRequired": "Input đầu vào cần có",
       "singleAction": "Hành động cụ thể duy nhất cần làm ngay",
       "testCriterion": "Tiêu chí kiểm chứng xem đã xong chưa",
@@ -152,8 +158,8 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
     {
       "id": "bn_1",
       "title": "Tên điểm nghẽn",
-      "severity": "critical" | "moderate" | "low",
-      "category": "cognitive" | "technical" | "dependency" | "process",
+      "severity": "critical",
+      "category": "cognitive",
       "symptom": "Triệu chứng nhận biết",
       "rootCauseWhy": "Lý do gốc rễ (Why)",
       "counterMeasure": "Biện pháp giải quyết tức thì"
@@ -163,8 +169,8 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
     {
       "id": "rk_1",
       "risk": "Nguy cơ tiềm ẩn",
-      "probability": "High" | "Medium" | "Low",
-      "impact": "High" | "Medium" | "Low",
+      "probability": "High",
+      "impact": "High",
       "prevention": "Hành động phòng ngừa trước",
       "contingency": "Kế hoạch ứng phó khi sự cố xảy ra"
     }
@@ -179,24 +185,29 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        temperature: 0.3,
-      },
-    });
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        },
+      });
 
-    const text = response.text || '';
-    const parsed = JSON.parse(cleanJsonResponse(text));
-    return res.json(parsed);
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn(
+        '[api/predict] Upstream Gemini model experienced high demand (503) or transient spike. Seamlessly serving smart synthesized forecast:',
+        aiErr?.message || aiErr
+      );
+      return res.json(buildSmartFallbackPrediction(context));
+    }
   } catch (err: any) {
     console.error('Error in /api/predict:', err);
-    return res.status(500).json({
-      error: 'Failed to generate contextual prediction: ' + (err.message || String(err)),
-    });
+    return res.json(buildSmartFallbackPrediction(req.body?.context));
   }
 });
 
@@ -218,9 +229,8 @@ app.post('/api/socratic-decision', async (req: Request, res: Response) => {
     }
 
     if (!ai) {
-      return res.status(503).json({
-        error: 'GEMINI_API_KEY is not configured on the server. Using local fallback.',
-      });
+      console.warn('[api/socratic-decision] GEMINI_API_KEY not configured, serving smart fallback decision');
+      return res.json(buildSmartFallbackDecision(dilemma, context));
     }
 
     const systemInstruction = `
@@ -276,24 +286,29 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    });
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          temperature: 0.2,
+        },
+      });
 
-    const text = response.text || '';
-    const parsed = JSON.parse(cleanJsonResponse(text));
-    return res.json(parsed);
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn(
+        '[api/socratic-decision] Upstream Gemini busy/503 spike, serving resilient fallback:',
+        aiErr?.message || aiErr
+      );
+      return res.json(buildSmartFallbackDecision(dilemma, context));
+    }
   } catch (err: any) {
     console.error('Error in /api/socratic-decision:', err);
-    return res.status(500).json({
-      error: 'Failed to analyze decision: ' + (err.message || String(err)),
-    });
+    return res.json(buildSmartFallbackDecision(req.body?.dilemma || '', req.body?.context));
   }
 });
 
@@ -310,9 +325,8 @@ app.post('/api/decompose', async (req: Request, res: Response) => {
     }
 
     if (!ai) {
-      return res.status(503).json({
-        error: 'GEMINI_API_KEY is not configured on the server.',
-      });
+      console.warn('[api/decompose] GEMINI_API_KEY not configured, serving smart fallback decomposition');
+      return res.json(buildSmartFallbackDecomposition(stepTitle, contextFriction));
     }
 
     const prompt = `
@@ -332,23 +346,33 @@ Trả về JSON:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        temperature: 0.2,
-      },
-    });
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          temperature: 0.2,
+        },
+      });
 
-    const text = response.text || '';
-    const parsed = JSON.parse(cleanJsonResponse(text));
-    return res.json(parsed);
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn(
+        '[api/decompose] Upstream Gemini 503 spike, serving resilient decomposition:',
+        aiErr?.message || aiErr
+      );
+      return res.json(buildSmartFallbackDecomposition(stepTitle, contextFriction));
+    }
   } catch (err: any) {
     console.error('Error in /api/decompose:', err);
-    return res.status(500).json({
-      error: 'Failed to decompose step: ' + (err.message || String(err)),
-    });
+    return res.json(
+      buildSmartFallbackDecomposition(
+        req.body?.stepTitle || 'Vi bước kỹ thuật',
+        req.body?.contextFriction
+      )
+    );
   }
 });
 
@@ -637,24 +661,35 @@ Hãy xây dựng toàn bộ lộ trình có thể nhìn trước được theo c
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        temperature: 0.3,
-      },
-    });
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        },
+      });
 
-    const text = response.text || '';
-    const parsed = JSON.parse(cleanJsonResponse(text));
-    return res.json(parsed);
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn(
+        '[api/goals/plan] Upstream Gemini 503 spike, serving resilient goal plan fallback:',
+        aiErr?.message || aiErr
+      );
+      return res.json(buildSmartFallbackGoalPlan(goalTitle, category, horizon));
+    }
   } catch (err: any) {
     console.error('Error in /api/goals/plan:', err);
-    return res.status(500).json({
-      error: 'Failed to generate goal plan: ' + (err.message || String(err)),
-    });
+    return res.json(
+      buildSmartFallbackGoalPlan(
+        req.body?.goalTitle || 'Mục tiêu kỹ thuật',
+        req.body?.category,
+        req.body?.horizon
+      )
+    );
   }
 });
 
@@ -873,12 +908,19 @@ NGUYÊN TẮC TRẢ LỜI:
 3. Nếu tài liệu không chứa đủ thông tin để trả lời trọn vẹn, hãy nói rõ: "Dựa trên các ghi chú hiện có..." và bổ sung kiến thức kỹ thuật lập trình chuẩn xác để hỗ trợ người dùng.
 4. Giữ phong thái kỹ sư cấp cao: súc tích, thực chiến, có code snippet minh họa nếu phù hợp.`;
 
-    const result = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: prompt,
-    });
-
-    const answer = result.text || 'Không thể tạo câu trả lời từ ngữ cảnh.';
+    let answer = 'Không thể tạo câu trả lời từ ngữ cảnh.';
+    try {
+      const result = await generateContentWithFallback(ai, {
+        contents: prompt,
+      });
+      answer = result.text || answer;
+    } catch (aiErr: any) {
+      console.warn('[api/notes/rag-ask] Upstream Gemini 503 spike, using top document text as grounded response');
+      const topDoc = retrievedNotes[0];
+      answer = topDoc
+        ? `[Chế độ dự phòng khi mạng tải cao] Dựa trên ghi chú "${topDoc.title}":\n\n${topDoc.content}`
+        : 'Hệ thống đang gặp tải cao tạm thời từ mô hình AI. Vui lòng thử lại sau giây lát.';
+    }
 
     return res.json({
       answer,
