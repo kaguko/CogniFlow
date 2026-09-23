@@ -13,3 +13,8 @@ secrets.json
 /secrets/
 /keys/
 
+# Firebase configuration & secrets
+firebase-applet-config.json
+firebase_applet_config.xml
+firebase-blueprint.json
+
