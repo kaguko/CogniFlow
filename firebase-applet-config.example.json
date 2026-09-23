@@ -1,0 +1,12 @@
+{
+  "projectId": "YOUR_FIREBASE_PROJECT_ID",
+  "appId": "YOUR_FIREBASE_APP_ID",
+  "apiKey": "YOUR_FIREBASE_WEB_API_KEY",
+  "authDomain": "YOUR_PROJECT.firebaseapp.com",
+  "storageBucket": "YOUR_PROJECT.firebasestorage.app",
+  "messagingSenderId": "",
+  "measurementId": "",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": "",
+  "_comment": "Copy this file to 'firebase-applet-config.json' for local dev only. The real file is git-ignored and must never be committed."
+}
