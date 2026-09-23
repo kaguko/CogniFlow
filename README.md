@@ -1,4 +1,4 @@
-# CogniFlow - Contextual Future Prediction & Micro-Step Engine
+# SymFlowAge - Contextual Future Prediction & Micro-Step Engine
 
 > **Hệ thống AI dự đoán tương lai theo ngữ cảnh, phân rã vi bước kỹ thuật (5-15 phút), radar nhận diện điểm nghẽn và trợ lý ra quyết định Why-First tích hợp RAG ngữ nghĩa & phân tích xu hướng năng suất Recharts.**
 
@@ -28,12 +28,12 @@
 
 ## 🎯 Tổng Quan & Triết Lý Thiết Kế
 
-**CogniFlow** được xây dựng để giải quyết hai vấn đề nhức nhối nhất của kỹ sư phần mềm và người làm việc trí óc:
+**SymFlowAge** được xây dựng để giải quyết hai vấn đề nhức nhối nhất của kỹ sư phần mềm và người làm việc trí óc:
 1. **Analysis Paralysis (Tê liệt phân tích)**: Khi đối mặt với các dự án lớn, kiến trúc phức tạp hoặc nợ kỹ thuật chồng chất, não bộ bị quá tải nhận thức và không thể bắt đầu hành động đầu tiên.
 2. **Goal Drift (Trôi dạt mục tiêu)**: Hàng ngày bận rộn với các tác vụ vụn vặt nhưng dần mất liên kết với các mục tiêu dài hạn quan trọng.
 
 ### 🧠 Triết Lý Lập Trình Viên (Programmer Principles)
-Mọi tác vụ trong CogniFlow đều được phân rã theo 6 nguyên lý kỹ thuật:
+Mọi tác vụ trong SymFlowAge đều được phân rã theo 6 nguyên lý kỹ thuật:
 - **Divide & Conquer**: Phân rã bài toán lớn thành các đơn vị công việc độc lập.
 - **Atomic Commit**: Mỗi bước hoàn thành phải khép kín, có thể kiểm chứng độc lập và bàn giao ngay.
 - **Fail Fast**: Thiết lập phép thử để phát hiện sai sót sớm nhất có thể trong vòng dưới 3 phút.
@@ -279,7 +279,7 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 | `DATABASE_URL` | Tùy chọn | URL kết nối PostgreSQL (dùng cho pgvector semantic search) |
 | `VITE_FIREBASE_*` | Tùy chọn | Các cấu hình Firebase Authentication (nếu bật chế độ đăng nhập tài khoản) |
 
-*Ghi chú: Nếu chưa có `GEMINI_API_KEY`, CogniFlow sẽ tự động chuyển sang chế độ Mô Phỏng Dự Báo Thông Minh (Smart Synthesized Mode) để bạn có thể trải nghiệm toàn bộ giao diện mà không gặp bất kỳ lỗi gián đoạn nào.*
+*Ghi chú: Nếu chưa có `GEMINI_API_KEY`, SymFlowAge sẽ tự động chuyển sang chế độ Mô Phỏng Dự Báo Thông Minh (Smart Synthesized Mode) để bạn có thể trải nghiệm toàn bộ giao diện mà không gặp bất kỳ lỗi gián đoạn nào.*
 
 ---
 

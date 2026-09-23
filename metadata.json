@@ -1,5 +1,5 @@
 {
-  "name": "CogniFlow - Hệ Thống Dự Đoán Ngữ Cảnh & Chia Nhỏ Vi Bước",
+  "name": "SymFlowAge - Hệ Thống Dự Đoán Ngữ Cảnh & Chia Nhỏ Vi Bước",
   "description": "Hệ thống AI dự đoán tương lai theo ngữ cảnh, phân tích hành vi và điểm nghẽn, chia nhỏ mục tiêu phức tạp thành các vi bước lập trình viên, tích hợp RAG & pgvector tìm kiếm ngữ nghĩa ghi chú kỹ thuật.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

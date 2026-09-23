@@ -48,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({
         <a href="/" className="flex items-center gap-2 group">
           <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 group-hover:scale-125 transition-transform" />
           <span className="text-lg font-bold tracking-tight text-white font-sans">
-            Cogni<span className="text-indigo-400">Flow</span>
+            Sym<span className="text-indigo-400">FlowAge</span>
           </span>
         </a>
         <span className="text-slate-600 text-xs hidden sm:inline">/</span>

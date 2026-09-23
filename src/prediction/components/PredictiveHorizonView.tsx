@@ -71,8 +71,8 @@ export const PredictiveHorizonView: React.FC<PredictiveHorizonViewProps> = ({
       <div className="relative rounded-lg overflow-hidden border border-slate-800 bg-slate-900 shadow-md">
         <div className="h-44 sm:h-52 w-full relative">
           <img
-            src="/src/assets/images/cogniflow_architecture_visual_1790137621456.jpg"
-            alt="CogniFlow Architectural Visual"
+            src="/src/assets/images/symflowage_architecture_visual_1790137621456.jpg"
+            alt="SymFlowAge Architectural Visual"
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover object-center opacity-40 mix-blend-luminosity filter contrast-125"
           />
