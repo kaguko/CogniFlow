@@ -59,7 +59,7 @@ export const SemanticKnowledgeRagView: React.FC = () => {
   const [authToken, setAuthToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+    const unsubscribe = auth.onAuthStateChanged(async (user: { getIdToken: () => Promise<string> } | null) => {
       if (user) {
         setCurrentUser(user);
         const token = await user.getIdToken();

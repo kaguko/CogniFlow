@@ -112,18 +112,32 @@ export async function searchNotesSemantic(
           LIMIT ${limit}`
     );
 
-    return result.rows.map((row: any) => ({
-      id: Number(row.id),
-      userUid: String(row.userUid),
-      title: String(row.title),
-      category: String(row.category || 'Ghi chú'),
-      content: String(row.content),
-      tags: String(row.tags || ''),
-      createdAt: row.createdAt ? new Date(row.createdAt) : null,
-      updatedAt: row.updatedAt ? new Date(row.updatedAt) : null,
-      similarity: Math.max(0, Math.min(1, Number(row.similarity || 0))),
-      distance: Number(row.distance || 0),
-    })).filter((item) => item.similarity >= minSimilarity);
+    return result.rows
+      .map((row: Record<string, unknown>) => {
+        const createdRaw = row.createdAt;
+        const updatedRaw = row.updatedAt;
+        const createdAt =
+          typeof createdRaw === 'string' || typeof createdRaw === 'number' || createdRaw instanceof Date
+            ? new Date(createdRaw as string | number | Date)
+            : null;
+        const updatedAt =
+          typeof updatedRaw === 'string' || typeof updatedRaw === 'number' || updatedRaw instanceof Date
+            ? new Date(updatedRaw as string | number | Date)
+            : null;
+        return {
+          id: Number(row.id),
+          userUid: String(row.userUid),
+          title: String(row.title),
+          category: String(row.category || 'Ghi chú'),
+          content: String(row.content),
+          tags: String(row.tags || ''),
+          createdAt,
+          updatedAt,
+          similarity: Math.max(0, Math.min(1, Number(row.similarity || 0))),
+          distance: Number(row.distance || 0),
+        };
+      })
+      .filter((item: { similarity: number }) => item.similarity >= minSimilarity);
   } catch (error) {
     console.error('searchNotesSemantic failed:', error);
     throw new Error('Failed to execute semantic vector search.', { cause: error });
