@@ -21,6 +21,8 @@ export interface MicroStep {
   completedAt?: string;
   nanoSteps?: NanoStep[];
   notes?: string;
+  elapsedSeconds?: number;
+  pomodoroCount?: number;
   // Version 2.0 Traceability Linkage:
   goalId?: string;
   goalTitle?: string;

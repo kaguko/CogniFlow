@@ -73,23 +73,60 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
 
   // Pomodoro / Execution Sprint Timer State
   const activeStep = microSteps.find((s) => s.id === activeStepId) || microSteps[0];
-  const [sprintMode, setSprintMode] = useState<SprintMode>('nano');
+  const [sprintMode, setSprintMode] = useState<SprintMode>('micro');
   const [targetedNanoId, setTargetedNanoId] = useState<string | null>(null);
   const [targetedNanoText, setTargetedNanoText] = useState<string>('');
-  const [totalSprintSeconds, setTotalSprintSeconds] = useState<number>(120); // 2 mins for nano-step sprint
-  const [timeLeft, setTimeLeft] = useState<number>(120);
+  const [totalSprintSeconds, setTotalSprintSeconds] = useState<number>(600); // Default to active step duration
+  const [timeLeft, setTimeLeft] = useState<number>(600);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [soundAlertEnabled, setSoundAlertEnabled] = useState<boolean>(true);
   const [showCompletionAlert, setShowCompletionAlert] = useState<boolean>(false);
 
-  // When active step changes, reset context
+  // Track elapsed effort per micro-step (in seconds)
+  const [elapsedByStepId, setElapsedByStepId] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    microSteps.forEach((s) => {
+      if (s.elapsedSeconds) initial[s.id] = s.elapsedSeconds;
+    });
+    return initial;
+  });
+
+  // Track completed pomodoros per micro-step
+  const [pomodoroCountByStepId, setPomodoroCountByStepId] = useState<Record<string, number>>(() => {
+    const initial: Record<string, number> = {};
+    microSteps.forEach((s) => {
+      if (s.pomodoroCount) initial[s.id] = s.pomodoroCount;
+    });
+    return initial;
+  });
+
+  // Calculate active step effort metrics
+  const activeEstimatedSecs = (activeStep?.durationMinutes || 10) * 60;
+  const activeElapsedSecs = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
+  const activeEffortRatio = activeEstimatedSecs > 0 ? Math.round((activeElapsedSecs / activeEstimatedSecs) * 100) : 0;
+  const activePomodoros = activeStep ? (pomodoroCountByStepId[activeStep.id] || 0) : 0;
+
+  // When active step changes, sync timer to the selected step
   useEffect(() => {
     if (activeStep) {
+      const stepDurationSecs = (activeStep.durationMinutes || 10) * 60;
+      const stepElapsed = elapsedByStepId[activeStep.id] || 0;
+      
       if (sprintMode === 'micro') {
-        const secs = (activeStep.durationMinutes || 10) * 60;
-        setTotalSprintSeconds(secs);
-        setTimeLeft(secs);
+        const remainingForStep = Math.max(60, stepDurationSecs - stepElapsed);
+        setTotalSprintSeconds(stepDurationSecs);
+        setTimeLeft(remainingForStep);
+      } else if (sprintMode === 'nano') {
+        setTotalSprintSeconds(120);
+        setTimeLeft(120);
+      } else if (sprintMode === 'pomodoro') {
+        setTotalSprintSeconds(25 * 60);
+        setTimeLeft(25 * 60);
+      } else if (sprintMode === 'break') {
+        setTotalSprintSeconds(5 * 60);
+        setTimeLeft(5 * 60);
       }
+      
       setTargetedNanoId(null);
       setTargetedNanoText('');
       setShowCompletionAlert(false);
@@ -101,11 +138,17 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const handleSelectSprintMode = (mode: SprintMode) => {
     setSprintMode(mode);
     setShowCompletionAlert(false);
-    let seconds = 120;
+    let seconds = 600;
     if (mode === 'nano') {
       seconds = 120; // 2 minutes for breaking procrastination on nano-steps
     } else if (mode === 'micro') {
-      seconds = (activeStep?.durationMinutes || 10) * 60;
+      const stepDurationSecs = (activeStep?.durationMinutes || 10) * 60;
+      const stepElapsed = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
+      seconds = Math.max(60, stepDurationSecs - stepElapsed);
+      setTotalSprintSeconds(stepDurationSecs);
+      setTimeLeft(seconds);
+      setIsTimerRunning(false);
+      return;
     } else if (mode === 'pomodoro') {
       seconds = 25 * 60; // 25 minutes classic pomodoro
     } else if (mode === 'break') {
@@ -138,15 +181,29 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     });
   };
 
-  // Timer interval & completion sound alert
+  // Timer interval & sync elapsed effort per active step
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
     if (isTimerRunning && timeLeft > 0) {
       timer = setInterval(() => {
         setTimeLeft((prev) => prev - 1);
+        // Accumulate elapsed effort for active step if running focus sprint
+        if (sprintMode !== 'break' && activeStep) {
+          setElapsedByStepId((prev) => ({
+            ...prev,
+            [activeStep.id]: (prev[activeStep.id] || 0) + 1,
+          }));
+        }
       }, 1000);
     } else if (timeLeft === 0 && isTimerRunning) {
       setIsTimerRunning(false);
+      // Increment pomodoro count if pomodoro mode finished
+      if (sprintMode === 'pomodoro' && activeStep) {
+        setPomodoroCountByStepId((prev) => ({
+          ...prev,
+          [activeStep.id]: (prev[activeStep.id] || 0) + 1,
+        }));
+      }
       if (soundAlertEnabled) {
         playCompletionAlert();
       }
@@ -155,7 +212,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [isTimerRunning, timeLeft, soundAlertEnabled]);
+  }, [isTimerRunning, timeLeft, soundAlertEnabled, sprintMode, activeStep?.id]);
 
   const toggleExpand = (id: string) => {
     setExpandedStepIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -215,6 +272,22 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     .filter((s) => !s.completed)
     .reduce((acc, s) => acc + s.durationMinutes, 0);
 
+  const totalEstimatedMinutes = microSteps.reduce((acc, s) => acc + s.durationMinutes, 0);
+  const totalElapsedSeconds = Object.values(elapsedByStepId).reduce((acc, v) => acc + v, 0);
+  const totalElapsedMinutes = Math.floor(totalElapsedSeconds / 60);
+  const totalElapsedRemainderSecs = totalElapsedSeconds % 60;
+  const overallEffortPercent =
+    totalEstimatedMinutes > 0
+      ? Math.round((totalElapsedSeconds / (totalEstimatedMinutes * 60)) * 100)
+      : 0;
+
+  const formatElapsedDetailed = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins === 0) return `${secs}s`;
+    return `${mins}m ${secs.toString().padStart(2, '0')}s`;
+  };
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
       {/* Header & Flow-State Overview */}
@@ -225,18 +298,18 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               Bộ Công Cụ Phân Rã Vi Bước
             </span>
             <span aria-hidden="true">·</span>
-            <span>Pomodoro Focus Sprints (Timed Execution)</span>
+            <span>Pomodoro Focus Station & Effort Sync</span>
           </div>
           <h2 className="text-lg font-bold text-white tracking-tight">
-            Xử Lý Từng Bước Nhỏ 5–15 Phút & Pomodoro Nano Sprints
+            Đồng Hồ Pomodoro & Đo Lường Nỗ Lực Thực Tế (Elapsed vs Estimated)
           </h2>
           <p className="text-xs text-slate-300">
-            Tránh tê liệt phân tích: Thực thi các phiên sprint định giờ 2–15 phút kết hợp chuông báo hoàn tất âm thanh.
+            Đồng bộ hóa phiên tập trung sâu Pomodoro với vi bước hiện tại, đối chiếu thời gian thực tế đã bỏ ra và thời gian dự toán.
           </p>
         </div>
 
-        {/* Progress summary */}
-        <div className="flex items-center gap-6 sm:border-l sm:border-slate-800 sm:pl-6 shrink-0">
+        {/* Progress & Effort summary */}
+        <div className="flex items-center gap-4 sm:gap-6 sm:border-l sm:border-slate-800 sm:pl-6 shrink-0 flex-wrap">
           <div>
             <div className="text-[11px] text-slate-400">Tiến độ vi bước</div>
             <div className="text-base font-bold font-mono text-white tabular-nums">
@@ -246,7 +319,15 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           </div>
 
           <div>
-            <div className="text-[11px] text-slate-400">Thời gian ước tính còn</div>
+            <div className="text-[11px] text-slate-400">Thực tế đã dùng</div>
+            <div className="text-base font-bold font-mono text-amber-400 tabular-nums">
+              {totalElapsedMinutes}m {totalElapsedRemainderSecs > 0 ? `${totalElapsedRemainderSecs}s` : ''}
+              <span className="text-[10px] text-slate-500 font-normal ml-1">({overallEffortPercent}%)</span>
+            </div>
+          </div>
+
+          <div>
+            <div className="text-[11px] text-slate-400">Dự toán còn lại</div>
             <div className="text-base font-bold font-mono text-emerald-400 tabular-nums">
               ~{remainingMinutes} <span className="text-xs font-normal text-slate-400">phút</span>
             </div>
@@ -271,7 +352,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 BƯỚC {activeStep.order} / {totalCount}
               </span>
               <span className="text-xs text-slate-400 font-mono">
-                {activeStep.durationMinutes} phút
+                Dự toán: {activeStep.durationMinutes} phút
               </span>
               <span className="text-slate-600">·</span>
               <span className="text-xs text-amber-300 font-medium">
@@ -280,9 +361,15 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              {activePomodoros > 0 && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800/60">
+                  <Flame className="w-3 h-3 text-rose-400" />
+                  <span>{activePomodoros} 🍅 Pomodoro</span>
+                </span>
+              )}
               <span className="text-xs text-slate-400 flex items-center gap-1">
                 <Timer className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Pomodoro Focus Station</span>
+                <span>Pomodoro Station</span>
               </span>
             </div>
           </div>
@@ -326,23 +413,11 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             )}
           </div>
 
-          {/* POMODORO FOCUS TIMER WIDGET */}
-          <div className="p-4 rounded-lg bg-slate-950/80 border border-indigo-900/60 space-y-3 shadow-inner">
+          {/* POMODORO & EFFORT SYNC WIDGET */}
+          <div className="p-4 rounded-lg bg-slate-950/90 border border-indigo-900/60 space-y-4 shadow-inner">
             {/* Mode Presets & Sound Alert Toggle */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
               <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  onClick={() => handleSelectSprintMode('nano')}
-                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    sprintMode === 'nano'
-                      ? 'bg-amber-500/20 border border-amber-500/60 text-amber-300 shadow-sm font-semibold'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
-                  }`}
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>⚡ Nano Sprint (2m)</span>
-                </button>
-
                 <button
                   onClick={() => handleSelectSprintMode('micro')}
                   className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
@@ -350,9 +425,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       ? 'bg-indigo-500/20 border border-indigo-500/60 text-indigo-300 shadow-sm font-semibold'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
                   }`}
+                  title="Đồng bộ theo thời lượng ước lượng của vi bước"
                 >
                   <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>🎯 Vi Bước ({activeStep.durationMinutes}m)</span>
+                  <span>🎯 Đồng Bộ Bước ({activeStep.durationMinutes}m)</span>
                 </button>
 
                 <button
@@ -362,9 +438,23 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       ? 'bg-rose-500/20 border border-rose-500/60 text-rose-300 shadow-sm font-semibold'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
                   }`}
+                  title="25 phút tập trung sâu không gián đoạn"
                 >
                   <Flame className="w-3.5 h-3.5 text-rose-400" />
                   <span>🍅 Pomodoro (25m)</span>
+                </button>
+
+                <button
+                  onClick={() => handleSelectSprintMode('nano')}
+                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                    sprintMode === 'nano'
+                      ? 'bg-amber-500/20 border border-amber-500/60 text-amber-300 shadow-sm font-semibold'
+                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                  }`}
+                  title="2 phút phá băng trì hoãn"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span>⚡ Nano Sprint (2m)</span>
                 </button>
 
                 <button
@@ -374,6 +464,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       ? 'bg-emerald-500/20 border border-emerald-500/60 text-emerald-300 shadow-sm font-semibold'
                       : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
                   }`}
+                  title="Nghỉ ngơi nhận thức ngắn"
                 >
                   <Coffee className="w-3.5 h-3.5 text-emerald-400" />
                   <span>☕ Nghỉ Nhanh (5m)</span>
@@ -408,6 +499,64 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               </div>
             </div>
 
+            {/* Effort Comparison Bar: Elapsed Effort vs Estimated Budget */}
+            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                <div className="flex items-center gap-2 font-mono">
+                  <span className="text-slate-400">⏱️ Nỗ Lực Vi Bước:</span>
+                  <span className="text-white font-bold">
+                    {formatElapsedDetailed(activeElapsedSecs)}
+                  </span>
+                  <span className="text-slate-500">/</span>
+                  <span className="text-slate-300">
+                    {activeStep.durationMinutes}m ước lượng
+                  </span>
+                  <span
+                    className={`text-[11px] px-1.5 py-0.2 rounded font-bold ${
+                      activeEffortRatio > 100
+                        ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
+                        : activeEffortRatio >= 80
+                        ? 'bg-amber-950/80 text-amber-300 border border-amber-800'
+                        : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
+                    }`}
+                  >
+                    {activeEffortRatio}%
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-slate-400 font-mono">
+                  {activeEffortRatio > 100 ? (
+                    <span className="text-rose-400 font-medium">
+                      ⚠️ Vượt {formatElapsedDetailed(activeElapsedSecs - activeEstimatedSecs)} so với dự toán
+                    </span>
+                  ) : (
+                    <span className="text-emerald-400 font-medium">
+                      ✓ Còn {formatElapsedDetailed(Math.max(0, activeEstimatedSecs - activeElapsedSecs))} trong ngân sách
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Visual Dual Effort Progress Bar */}
+              <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800 relative">
+                {/* 100% Estimated Budget Marker Line */}
+                <div
+                  className="absolute top-0 bottom-0 right-0 w-0.5 bg-slate-600 z-10"
+                  title="Ngưỡng ước lượng 100%"
+                />
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    activeEffortRatio > 100
+                      ? 'bg-rose-500'
+                      : activeEffortRatio >= 80
+                      ? 'bg-amber-500'
+                      : 'bg-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, activeEffortRatio)}%` }}
+                />
+              </div>
+            </div>
+
             {/* Timer Center Display & Controls */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
               <div className="space-y-1">
@@ -429,9 +578,9 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       {isTimerRunning ? 'Đang Tập Trung' : timeLeft === 0 ? 'Hết Giờ Sprint' : 'Sẵn Sàng'}
                     </span>
                     <div className="text-[11px] text-slate-400">
+                      {sprintMode === 'micro' && 'Đồng bộ vi bước & đo lường nỗ lực'}
+                      {sprintMode === 'pomodoro' && 'Trạng thái tập trung sâu 25 phút'}
                       {sprintMode === 'nano' && 'Nano Sprint phá băng trì hoãn'}
-                      {sprintMode === 'micro' && 'Thực thi vi bước nguyên tử'}
-                      {sprintMode === 'pomodoro' && 'Trạng thái tập trung sâu (Deep Work)'}
                       {sprintMode === 'break' && 'Thư giãn nhận thức ngắn'}
                     </div>
                   </div>
@@ -488,7 +637,14 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
 
                 <button
                   onClick={() => {
-                    setTimeLeft(totalSprintSeconds);
+                    const stepDurationSecs = (activeStep?.durationMinutes || 10) * 60;
+                    const stepElapsed = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
+                    if (sprintMode === 'micro') {
+                      setTimeLeft(Math.max(60, stepDurationSecs - stepElapsed));
+                      setTotalSprintSeconds(stepDurationSecs);
+                    } else {
+                      setTimeLeft(totalSprintSeconds);
+                    }
                     setIsTimerRunning(false);
                     setShowCompletionAlert(false);
                   }}
@@ -780,7 +936,23 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5 flex-wrap">
-                        <span className="font-mono tabular-nums">{step.durationMinutes}m</span>
+                        <span className="font-mono tabular-nums">Dự kiến: {step.durationMinutes}m</span>
+                        {elapsedByStepId[step.id] ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="font-mono text-amber-300 font-medium">
+                              Đã dùng: {formatElapsedDetailed(elapsedByStepId[step.id])}
+                            </span>
+                          </>
+                        ) : null}
+                        {pomodoroCountByStepId[step.id] ? (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-rose-400 font-mono">
+                              🍅 x{pomodoroCountByStepId[step.id]}
+                            </span>
+                          </>
+                        ) : null}
                         <span aria-hidden="true">·</span>
                         <span className="text-slate-400">{step.programmerPrinciple}</span>
                         {step.goalTitle ? (
