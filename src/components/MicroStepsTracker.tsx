@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MicroStep, ProjectContext, LongTermGoal } from '../../types';
+import { MicroStep, ProjectContext, LongTermGoal, NanoStep } from '../types';
 import {
   CheckSquare,
   Square,
@@ -27,7 +27,7 @@ import {
   Target,
   Link2,
 } from 'lucide-react';
-import { AudioPlayerButton } from '../AudioPlayerButton';
+import { AudioPlayerButton } from './AudioPlayerButton';
 import { playCompletionAlert } from '../utils/audioPlayer';
 
 interface MicroStepsTrackerProps {
@@ -640,7 +640,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   <span className="text-[10px] text-amber-300 font-mono">Bấm Sprint 2m để chạy giờ</span>
                 </div>
                 <div className="space-y-2">
-                  {activeStep.nanoSteps.map((nano) => {
+                  {activeStep.nanoSteps.map((nano: NanoStep) => {
                     const isTargeted = targetedNanoId === nano.id;
                     return (
                       <div
@@ -796,7 +796,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                           <>
                             <span aria-hidden="true">·</span>
                             <span className="text-indigo-400">
-                              {step.nanoSteps.filter((n) => n.done).length}/{step.nanoSteps.length} nano-steps
+                              {step.nanoSteps.filter((n: NanoStep) => n.done).length}/{step.nanoSteps.length} nano-steps
                             </span>
                           </>
                         )}
@@ -843,7 +843,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                     {step.nanoSteps && (
                       <div className="pt-2 space-y-1">
                         <div className="text-[11px] font-semibold text-slate-400">Nano-steps:</div>
-                        {step.nanoSteps.map((ns) => (
+                        {step.nanoSteps.map((ns: NanoStep) => (
                           <div
                             key={ns.id}
                             className="flex items-center justify-between gap-2 text-xs p-1.5 rounded hover:bg-slate-900/60"

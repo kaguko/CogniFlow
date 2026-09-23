@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { BehavioralInsight, ProjectContext, MicroStep } from '../../types';
+import { BehavioralInsight, ProjectContext, MicroStep } from '../types';
 import {
   Activity,
   Brain,
@@ -26,7 +26,7 @@ import {
   Area,
   AreaChart,
 } from 'recharts';
-import { AudioPlayerButton } from '../AudioPlayerButton';
+import { AudioPlayerButton } from './AudioPlayerButton';
 
 interface BehavioralAnalyticsViewProps {
   behavioralInsights: BehavioralInsight;
@@ -419,7 +419,7 @@ export const BehavioralAnalyticsView: React.FC<BehavioralAnalyticsViewProps> = (
             </h3>
           </div>
           <div className="space-y-2">
-            {behavioralInsights.observedPatterns.map((pattern, idx) => (
+            {behavioralInsights.observedPatterns.map((pattern: string, idx: number) => (
               <div
                 key={idx}
                 className="p-3 rounded bg-slate-950 border border-slate-800/80 text-xs text-slate-300 flex items-start gap-2.5"
@@ -440,7 +440,7 @@ export const BehavioralAnalyticsView: React.FC<BehavioralAnalyticsViewProps> = (
             </h3>
           </div>
           <div className="space-y-2">
-            {behavioralInsights.cognitiveRecommendations.map((rec, idx) => (
+            {behavioralInsights.cognitiveRecommendations.map((rec: string, idx: number) => (
               <div
                 key={idx}
                 className="p-3 rounded bg-slate-950 border border-slate-800/80 text-xs text-slate-200 flex items-start gap-2.5"
@@ -459,7 +459,7 @@ export const BehavioralAnalyticsView: React.FC<BehavioralAnalyticsViewProps> = (
           Cờ Hành Vi Đang Được Giám Sát Trong Ngữ Cảnh:
         </span>
         <div className="flex flex-wrap gap-2 text-xs">
-          {currentContext.behavioralFlags.map((flag, idx) => (
+          {currentContext.behavioralFlags.map((flag: string, idx: number) => (
             <span
               key={idx}
               className="px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-slate-300 font-mono"

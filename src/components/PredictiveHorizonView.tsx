@@ -1,6 +1,6 @@
 import React from 'react';
-import { ProjectContext, FutureTimeline, PredictionPayload } from '../../types';
-import { AudioPlayerButton } from '../AudioPlayerButton';
+import { ProjectContext, FutureTimeline, PredictionPayload } from '../types';
+import { AudioPlayerButton } from './AudioPlayerButton';
 import {
   Compass,
   CheckCircle2,
@@ -41,6 +41,7 @@ export const PredictiveHorizonView: React.FC<PredictiveHorizonViewProps> = ({
           icon: AlertCircle,
         };
       case 'bottleneck':
+      default:
         return {
           label: 'Nguy Cơ Đổ Vỡ / Điểm Nghẽn',
           className: 'text-rose-400 bg-rose-950/60 border-rose-800/60',
@@ -145,7 +146,7 @@ export const PredictiveHorizonView: React.FC<PredictiveHorizonViewProps> = ({
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {prediction.timelines.map((timeline) => {
+          {prediction.timelines.map((timeline: FutureTimeline) => {
             const badge = getTimelineBadge(timeline.pathType);
             const BadgeIcon = badge.icon;
             const isOptimal = timeline.pathType === 'optimal';
@@ -187,7 +188,7 @@ export const PredictiveHorizonView: React.FC<PredictiveHorizonViewProps> = ({
                     <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                       Cột mốc dự báo:
                     </div>
-                    {timeline.milestones.map((ms, idx) => (
+                    {timeline.milestones.map((ms: any, idx: number) => (
                       <div
                         key={idx}
                         className={`p-2 rounded text-xs space-y-0.5 ${getMilestoneState(

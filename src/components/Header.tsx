@@ -1,5 +1,5 @@
 import React from 'react';
-import { ProjectContext, EnergyLevel } from '../../types';
+import { ProjectContext, EnergyLevel } from '../types';
 import { Sparkles, BatteryCharging, BatteryWarning, BatteryMedium, PlusCircle } from 'lucide-react';
 
 interface HeaderProps {
@@ -117,6 +117,19 @@ export const Header: React.FC<HeaderProps> = ({
           }`}
         >
           Cố Vấn Why-First
+        </button>
+        <button
+          onClick={() => setActiveTab('rag')}
+          className={`transition-colors py-1 flex items-center gap-1.5 ${
+            activeTab === 'rag'
+              ? 'text-white border-b-2 border-indigo-500 font-semibold'
+              : 'hover:text-slate-200'
+          }`}
+        >
+          <span>RAG & pgvector</span>
+          <span className="text-[10px] px-1 py-0.2 rounded bg-indigo-900/60 text-indigo-300 border border-indigo-700/40 font-mono">
+            MVP
+          </span>
         </button>
       </nav>
 

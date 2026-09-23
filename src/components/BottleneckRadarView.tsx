@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BottleneckItem, RiskMatrixItem, BehavioralInsight, ProjectContext } from '../../types';
+import { BottleneckItem, RiskMatrixItem, BehavioralInsight, ProjectContext } from '../types';
 import {
   AlertTriangle,
   Flame,
@@ -13,7 +13,7 @@ import {
   Clock,
   Sparkles,
 } from 'lucide-react';
-import { AudioPlayerButton } from '../AudioPlayerButton';
+import { AudioPlayerButton } from './AudioPlayerButton';
 
 interface BottleneckRadarViewProps {
   bottlenecks: BottleneckItem[];
@@ -47,6 +47,7 @@ export const BottleneckRadarView: React.FC<BottleneckRadarViewProps> = ({
           dot: 'bg-amber-500',
         };
       case 'low':
+      default:
         return {
           label: 'Nhẹ',
           badge: 'bg-emerald-950/70 text-emerald-300 border-emerald-800/60',

@@ -3,7 +3,7 @@ export * from './entities/longTermGoal';
 export * from './valueObjects';
 
 import type { LongTermGoal } from './entities/longTermGoal';
-import type { GoalDriftStatus } from '../common/types'; // Will create types barrel
+import type { GoalDriftStatus } from './valueObjects';
 
 export interface GoalPlanRequest {
   contextTitle: string;

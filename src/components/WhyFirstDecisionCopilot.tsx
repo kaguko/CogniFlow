@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { WhyFirstDecisionResult, ProjectContext } from '../../types';
+import { WhyFirstDecisionResult, ProjectContext } from '../types';
 import {
   Lightbulb,
   Sparkles,
@@ -11,7 +11,7 @@ import {
   Brain,
   Quote,
 } from 'lucide-react';
-import { AudioPlayerButton } from '../AudioPlayerButton';
+import { AudioPlayerButton } from './AudioPlayerButton';
 
 interface WhyFirstDecisionCopilotProps {
   currentContext: ProjectContext;
@@ -238,7 +238,7 @@ export const WhyFirstDecisionCopilot: React.FC<WhyFirstDecisionCopilotProps> = (
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {result.alternativesEvaluated.map((alt, idx) => (
+              {result.alternativesEvaluated.map((alt: any, idx: number) => (
                 <div
                   key={idx}
                   className="p-3 rounded bg-slate-950 border border-slate-800/80 space-y-2 text-xs"
@@ -308,7 +308,7 @@ export const WhyFirstDecisionCopilot: React.FC<WhyFirstDecisionCopilotProps> = (
                   Kế hoạch hành động ngay:
                 </span>
                 <div className="space-y-1">
-                  {result.microActionPlan.map((action, idx) => (
+                  {result.microActionPlan.map((action: string, idx: number) => (
                     <div
                       key={idx}
                       className="flex items-center gap-2 text-xs text-slate-300 font-mono"
@@ -334,7 +334,7 @@ export const WhyFirstDecisionCopilot: React.FC<WhyFirstDecisionCopilotProps> = (
               Hệ thống không quyết định thay bạn. Hãy tự vấn 3 câu hỏi này để củng cố tư duy phản biện của chính bạn:
             </p>
             <div className="space-y-2">
-              {result.socraticQuestions.map((q, idx) => (
+              {result.socraticQuestions.map((q: string, idx: number) => (
                 <div
                   key={idx}
                   className="p-3 rounded bg-slate-950 border border-purple-900/40 text-xs text-purple-200 flex items-start gap-2.5"

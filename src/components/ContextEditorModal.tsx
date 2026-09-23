@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ProjectContext, DomainType, EnergyLevel } from '../../types';
+import { ProjectContext, DomainType, EnergyLevel } from '../types';
 import { Sparkles, X, Layers, AlertCircle } from 'lucide-react';
 
 interface ContextEditorModalProps {
@@ -41,11 +41,11 @@ export const ContextEditorModal: React.FC<ContextEditorModalProps> = ({
       currentFriction: currentFriction.trim() || 'Chưa rõ điểm bắt đầu',
       techStack: techStackInput
         .split(',')
-        .map((s) => s.trim())
+        .map((s: string) => s.trim())
         .filter(Boolean),
       behavioralFlags: behavioralFlagsInput
         .split(',')
-        .map((s) => s.trim())
+        .map((s: string) => s.trim())
         .filter(Boolean),
       lastUpdated: 'Vừa xong',
     };

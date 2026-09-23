@@ -10,7 +10,7 @@ export interface PredictionPayload {
   strategicWhySummary: string;
   longTermGoals?: import('../goal/entities/longTermGoal').LongTermGoal[];
   activeGoalId?: string;
-  driftStatus?: import('../goal/entities/longTermGoal').DriftStatus;
+  driftStatus?: import('../goal/valueObjects').GoalDriftStatus;
 }
 
 export interface PredictionRequest {

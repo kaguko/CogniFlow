@@ -16,6 +16,7 @@ import { MicroStepsTracker } from './components/MicroStepsTracker';
 import { BottleneckRadarView } from './components/BottleneckRadarView';
 import { WhyFirstDecisionCopilot } from './components/WhyFirstDecisionCopilot';
 import { BehavioralAnalyticsView } from './components/BehavioralAnalyticsView';
+import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
 import { ContextEditorModal } from './components/ContextEditorModal';
 
 export default function App() {
@@ -375,6 +376,10 @@ export default function App() {
 
           {activeTab === 'whyfirst' && (
             <WhyFirstDecisionCopilot currentContext={currentContext} />
+          )}
+
+          {activeTab === 'rag' && (
+            <SemanticKnowledgeRagView />
           )}
 
           {activeTab === 'behavioral' && (

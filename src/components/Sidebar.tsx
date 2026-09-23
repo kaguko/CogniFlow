@@ -1,5 +1,5 @@
 import React from 'react';
-import { ProjectContext } from '../../types';
+import { ProjectContext } from '../types';
 import {
   Compass,
   CheckSquare,
@@ -11,6 +11,7 @@ import {
   Code2,
   Telescope,
   Target,
+  Database,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -72,6 +73,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Cố Vấn Why-First',
       icon: Lightbulb,
       description: 'Tư duy phản biện Socratic',
+    },
+    {
+      id: 'rag',
+      label: 'RAG & Tìm Kiếm Ngữ Nghĩa',
+      icon: Database,
+      badge: 'pgvector',
+      description: 'Cosine search & Grounded Q&A',
     },
     {
       id: 'behavioral',

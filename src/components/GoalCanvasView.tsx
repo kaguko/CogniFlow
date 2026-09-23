@@ -5,8 +5,9 @@ import {
   GoalHorizon,
   GoalCategory,
   MicroStep,
-} from '../../types';
-import { GoalDriftStatus } from '../../goal/valueObjects';
+  GoalDriftStatus,
+  GoalSprint,
+} from '../types';
 import {
   Telescope,
   Sparkles,
@@ -462,7 +463,7 @@ export const GoalCanvasView: React.FC<GoalCanvasViewProps> = ({
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {goal.milestones.map((ms, idx) => (
+                    {goal.milestones.map((ms: GoalMilestone, idx: number) => (
                       <div
                         key={ms.id}
                         className="bg-slate-900/80 border border-slate-800 rounded-md p-3.5 space-y-2.5"
@@ -498,7 +499,7 @@ export const GoalCanvasView: React.FC<GoalCanvasViewProps> = ({
                               Sprints tuần:
                             </div>
                             <div className="space-y-1">
-                              {ms.sprints.map((sp) => (
+                              {ms.sprints.map((sp: GoalSprint) => (
                                 <div
                                   key={sp.id}
                                   className="flex items-center justify-between text-[11px] bg-slate-950/40 px-2 py-1 rounded"

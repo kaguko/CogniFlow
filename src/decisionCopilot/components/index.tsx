@@ -1,2 +1,2 @@
 // DecisionCopilot feature components
-export { WhyFirstDecisionCopilot } from './components/WhyFirstDecisionCopilot';
+export { WhyFirstDecisionCopilot } from '../../components/WhyFirstDecisionCopilot';
