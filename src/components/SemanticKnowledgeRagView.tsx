@@ -19,7 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { signInWithPopup, signOut } from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase';
+import { auth, googleAuthProvider, isFirebaseConfigured } from '../lib/firebase';
 
 interface NoteItem {
   id: number;
@@ -103,11 +103,19 @@ export const SemanticKnowledgeRagView: React.FC = () => {
   }, [authToken]);
 
   // Handle Google Sign-in
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const handleSignIn = async () => {
+    setAuthError(null);
+    if (!isFirebaseConfigured) {
+      setAuthError('Firebase Authentication chưa được cấu hình khóa API hợp lệ. Bạn vẫn có thể dùng ứng dụng ở chế độ cục bộ.');
+      return;
+    }
     try {
       await signInWithPopup(auth, googleAuthProvider);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Sign-in error:', err);
+      setAuthError(err?.message || 'Đăng nhập Google không thành công.');
     }
   };
 
@@ -293,14 +301,21 @@ export const SemanticKnowledgeRagView: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-[11px] text-slate-400">Kho dữ liệu cục bộ / Khách</span>
-                <button
-                  onClick={handleSignIn}
-                  className="px-2.5 py-1 text-[11px] font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors"
-                >
-                  Đăng nhập Google
-                </button>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-[11px] text-slate-400">Kho dữ liệu cục bộ / Khách</span>
+                  <button
+                    onClick={handleSignIn}
+                    className="px-2.5 py-1 text-[11px] font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded transition-colors"
+                  >
+                    Đăng nhập Google
+                  </button>
+                </div>
+                {authError && (
+                  <span className="text-[10px] text-amber-400 max-w-xs text-right">
+                    {authError}
+                  </span>
+                )}
               </div>
             )}
           </div>
