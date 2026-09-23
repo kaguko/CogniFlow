@@ -1,5 +1,11 @@
 import React, { useState } from 'react';
-import { ProjectContext, PredictionPayload, MicroStep, LongTermGoal, ZoomLevel } from './types';
+import {
+  ProjectContext,
+  PredictionPayload,
+  MicroStep,
+  LongTermGoal,
+  ZoomLevel,
+} from './types';
 import { DEFAULT_PRESET_CONTEXTS, INITIAL_PREDICTION_DATA, DEFAULT_LONG_TERM_GOALS } from './data/defaultPresets';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';

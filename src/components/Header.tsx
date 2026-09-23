@@ -1,5 +1,5 @@
 import React from 'react';
-import { ProjectContext, EnergyLevel } from '../types';
+import { ProjectContext, EnergyLevel } from '../../types';
 import { Sparkles, BatteryCharging, BatteryWarning, BatteryMedium, PlusCircle } from 'lucide-react';
 
 interface HeaderProps {

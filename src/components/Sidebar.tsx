@@ -1,5 +1,5 @@
 import React from 'react';
-import { ProjectContext } from '../types';
+import { ProjectContext } from '../../types';
 import {
   Compass,
   CheckSquare,

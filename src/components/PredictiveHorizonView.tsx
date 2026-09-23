@@ -1,7 +1,15 @@
 import React from 'react';
-import { ProjectContext, FutureTimeline, PredictionPayload } from '../types';
-import { Compass, CheckCircle2, AlertCircle, Flame, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
-import { AudioPlayerButton } from './AudioPlayerButton';
+import { ProjectContext, FutureTimeline, PredictionPayload } from '../../types';
+import { AudioPlayerButton } from '../AudioPlayerButton';
+import {
+  Compass,
+  CheckCircle2,
+  AlertCircle,
+  Flame,
+  ArrowRight,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
 
 interface PredictiveHorizonViewProps {
   currentContext: ProjectContext;

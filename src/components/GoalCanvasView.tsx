@@ -5,7 +5,8 @@ import {
   GoalHorizon,
   GoalCategory,
   MicroStep,
-} from '../types';
+} from '../../types';
+import { GoalDriftStatus } from '../../goal/valueObjects';
 import {
   Telescope,
   Sparkles,

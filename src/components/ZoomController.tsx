@@ -1,5 +1,5 @@
 import React from 'react';
-import { ZoomLevel } from '../types';
+import { ZoomLevel } from '../../types';
 import { Telescope, Calendar, Zap, ArrowRightLeft } from 'lucide-react';
 
 interface ZoomControllerProps {

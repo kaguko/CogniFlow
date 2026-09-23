@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ProjectContext, DomainType, EnergyLevel } from '../types';
+import { ProjectContext, DomainType, EnergyLevel } from '../../types';
 import { Sparkles, X, Layers, AlertCircle } from 'lucide-react';
 
 interface ContextEditorModalProps {
