@@ -9,6 +9,9 @@
 [![Gemini API](https://img.shields.io/badge/Google%20GenAI-SDK%202.4-orange.svg)](https://ai.google.dev/)
 [![Drizzle ORM](https://img.shields.io/badge/Drizzle%20ORM-pgvector-green.svg)](https://orm.drizzle.team/)
 
+[![Author](https://img.shields.io/badge/Author-Lê%20Quang%20Huy-indigo.svg)](https://github.com/)
+[![License](https://img.shields.io/badge/Copyright-©%202026%20Lê%20Quang%20Huy-purple.svg)](https://github.com/)
+
 ---
 
 ## 📖 Mục Lục
@@ -23,6 +26,7 @@
 8. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
 9. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
 10. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+11. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -309,4 +313,15 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 
 ---
 
+## 👨‍💻 Tác Giả & Bản Quyền (Author & Copyright)
+
+- **Tác giả / Sáng lập**: **Lê Quang Huy**
+- **Dự án**: **CogniFlow — Semantic Flow Platform**
+- **Bản quyền**: © 2026 **Lê Quang Huy**. Tất cả các quyền được bảo lưu (*All rights reserved*).
+- **Mục đích**: Nền tảng điều hướng dòng chảy nhận thức và hỗ trợ ra quyết định kỹ thuật chuyên sâu theo nguyên lý "Why-First" & Domain-Driven Design (DDD).
+
+---
+
 *Phát triển với tinh thần kỹ sư thực chiến — Giảm tải nhận thức, tập trung tuyệt đối vào vi bước tiếp theo.*
+*© 2026 Lê Quang Huy. All rights reserved.*
+
