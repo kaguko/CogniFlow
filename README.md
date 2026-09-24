@@ -17,18 +17,19 @@
 ## 📖 Mục Lục
 
 1. [Tổng Quan & Triết Lý Thiết Kế](#-tổng-quan--triết-lý-thiết-kế)
-2. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
-3. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
-4. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
-5. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
-6. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
-7. [Tài Liệu API Endpoints](#-tài-liệu-api-endpoints)
-8. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
-9. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
-10. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
-11. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-12. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](./BENCHMARKS.md)
-13. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+2. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
+3. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
+4. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
+5. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
+6. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
+7. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
+8. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
+9. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
+10. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+11. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
+12. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+13. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
+14. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -46,6 +47,155 @@ Mọi tác vụ trong SymFlowAge đều được phân rã theo 6 nguyên lý k�
 - **Boundary Isolation**: Tách biệt ranh giới logic chính khỏi các phụ thuộc ngoại vi.
 - **YAGNI (You Aren't Gonna Need It)**: Giảm thiểu diện tích bề mặt giải pháp, chỉ làm đúng những gì cần thiết.
 - **TDD Verification Loop**: Mọi vi bước đều có tiêu chí kiểm chứng (Pass/Fail) rõ ràng trước khi đánh dấu hoàn thành.
+
+---
+
+## ⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)
+
+SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho mọi môi trường phát triển:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       SYMFLOWAGE INTEGRATION ECOSYSTEM                      │
+├───────────────────┬───────────────────┬─────────────────┬───────────────────┤
+│ 🔌 MCP Server     │ 📦 Node.js SDK    │ 🐍 Python SDK   │ 📄 OpenAPI/Swagger│
+│ Cursor, Windsurf, │ TypeScript/Node   │ LangChain,      │ REST API v1,      │
+│ Claude Desktop    │ apps & services   │ CrewAI, AutoGen │ Interactive Docs  │
+└───────────────────┴───────────────────┴─────────────────┴───────────────────┘
+```
+
+---
+
+### 🚀 Cách 1: Tích Hợp AI Editors (Cursor / Windsurf / Claude Desktop) qua MCP Protocol
+
+Định cấu hình file `claude_desktop_config.json` hoặc phần Cấu hình MCP Server trong Cursor / Windsurf:
+
+#### Cấu hình kết nối SSE Stream (Khuyến nghị cho Real-time Guardrail Alert):
+```json
+{
+  "mcpServers": {
+    "symflowage": {
+      "url": "https://your-symflowage-app.run.app/api/mcp/sse",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Bearer SYMFLOWAGE_M2M_API_KEY"
+      }
+    }
+  }
+}
+```
+
+#### Các MCP Tools sẵn có:
+- `symflowage_decompose_task`: Phân rã tác vụ phức tạp thành vi bước 5-15 phút.
+- `symflowage_check_guardrail`: Kiểm tra trôi dạt mục tiêu (Goal Drift) trước khi thực thi action.
+- `symflowage_report_outcome`: Gửi báo cáo kết quả thực tế (`SUCCESS`, `DRIFT`, `CRASH`, `ABANDONED`) để tối ưu hóa độ chính xác dự báo AI.
+- `symflowage_configure_circuit_breaker`: Thiết lập ngưỡng Drift Score và cấu hình Outbound Webhook.
+- `symflowage_subscribe_alerts`: Đăng ký lắng nghe sự kiện ngắt mạch thời gian thực.
+- `symflowage_get_accuracy_score`: Truy vấn tỷ lệ dự báo chính xác và chỉ số backtesting 30 ngày.
+
+---
+
+### 📦 Cách 2: Tích Hợp Node.js / TypeScript SDK (`@symflowage/sdk`)
+
+Sử dụng trực tiếp Node.js SDK từ `src/sdk/node` (hoặc package `@symflowage/sdk`):
+
+```typescript
+import { SymFlowAgeClient } from './src/sdk/node';
+
+// 1. Khởi tạo Client với M2M Key
+const client = new SymFlowAgeClient({
+  apiKey: process.env.SYMFLOWAGE_M2M_API_KEY || 'your-m2m-api-key',
+  baseUrl: 'http://localhost:3000',
+  timeoutMs: 5000,
+  maxRetries: 3
+});
+
+async function main() {
+  // 2. Phân rã nhiệm vụ
+  const plan = await client.decomposeTask({
+    taskTitle: 'Tích hợp Stripe Checkout Payment',
+    context: { coreGoal: 'Launch MVP SaaS' }
+  });
+  console.log('Vi bước:', plan.microSteps);
+
+  // 3. Kiểm tra Rào chắn Guardrail Circuit Breaker
+  const decision = await client.checkGuardrail({
+    agentId: 'agent_cline_vscode',
+    proposedAction: 'Viết lại toàn bộ hệ thống Auth từ đầu',
+    coreGoalTitle: 'Launch MVP SaaS'
+  });
+
+  if (decision.action === 'BLOCK') {
+    console.warn(`[Circuit Breaker] Chặn hành động: ${decision.reason}`);
+    return;
+  }
+
+  // 4. Báo cáo kết quả thực thi (Feedback Loop)
+  await client.reportOutcome({
+    requestId: plan.requestId,
+    outcomeStatus: 'SUCCESS',
+    actualExecutionTimeMs: 420000,
+    userFeedback: {
+      isFalsePositiveDrift: false,
+      notes: 'Hoàn thành vi bước chuẩn kế hoạch.'
+    }
+  });
+}
+
+main();
+```
+
+---
+
+### 🐍 Cách 3: Tích Hợp Python SDK (`symflowage-python`)
+
+Dành cho các AI Framework như **CrewAI, LangChain, AutoGen, LlamaIndex**:
+
+```python
+import asyncio
+from src.sdk.python.symflowage import AsyncSymFlowAgeClient
+
+async def run_agent_guardrail():
+    # 1. Khởi tạo Async Client
+    client = AsyncSymFlowAgeClient(
+        api_key="SYMFLOWAGE_M2M_API_KEY",
+        base_url="http://localhost:3000"
+    )
+
+    # 2. Guardrail Check trước khi Agent chạy tool nguy hiểm
+    decision = await client.check_guardrail(
+        agent_id="crewai_researcher_01",
+        proposed_action="Tối ưu hóa query SQL trước khi có dữ liệu thực tế",
+        core_goal_title="Ship Alpha Version"
+    )
+
+    if decision.action == "BLOCK":
+        print(f"🛑 [Circuit Breaker] Đã chặn Agent: {decision.reason}")
+        print(f"💡 Khuyên dùng: {decision.recommended_action}")
+    else:
+        print("✅ Guardrail PASSED - Tiếp tục thực thi")
+
+    # 3. Báo cáo Outcome đóng luồng
+    await client.report_outcome(
+        request_id="req_12345",
+        outcome_status="SUCCESS",
+        notes="Agent hoàn thành đúng vi bước"
+    )
+
+asyncio.run(run_agent_guardrail())
+```
+
+---
+
+### 📄 Cách 4: Trực Quan Hóa & Thử Nghiệm qua Swagger UI (`/api/docs`)
+
+1. **Khởi chạy ứng dụng**: `npm run dev`
+2. **Truy cập Swagger UI**: Mở trình duyệt tại **`http://localhost:3000/api/docs`**
+3. **Đọc OpenAPI 3.0 Spec**: file JSON chuẩn hóa tại **`http://localhost:3000/openapi.json`**
+4. **Thử nghiệm API trực tiếp**:
+   - Nhấp vào nút **Authorize** ở góc trên bên phải.
+   - Nhập `Bearer SYMFLOWAGE_M2M_API_KEY` của bạn.
+   - Thử nghiệm gửi request tới `/api/v1/agent/decompose`, `/api/v1/agent/guardrail/drift-check`, `/api/v1/agent/outcomes`.
 
 ---
 
@@ -264,7 +414,7 @@ Dự án áp dụng cấu trúc Domain-Driven Clean Architecture, mỗi domain m
 
 ---
 
-## 📡 Tài Liệu API Endpoints
+## 📡 Tài Liệu API Endpoints & OpenAPI / Swagger UI
 
 Tất cả các API được triển khai tại server backend (`server.ts`):
 
