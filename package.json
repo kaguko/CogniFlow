@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:generate": "drizzle-kit generate --config=src/db/drizzle.config.ts",
+    "db:migrate": "drizzle-kit migrate --config=src/db/drizzle.config.ts",
+    "backtest:local": "tsx scripts/run-backtest.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

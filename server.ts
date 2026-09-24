@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality, ThinkingLevel, Type } from '@google/genai';
@@ -11,6 +12,8 @@ import {
   searchNotesSemantic,
   getOrCreateUserRecord,
 } from './src/db/rag.ts';
+import { insertPredictionOutcome, insertPredictionSnapshot } from './src/db/predictions.ts';
+import { assertThresholds, runBacktest } from './src/lib/backtest.ts';
 import {
   generateContentWithFallback,
   buildSmartFallbackPrediction,
@@ -94,13 +97,60 @@ function cleanJsonResponse(text: string): string {
   return cleaned.trim();
 }
 
+function pickTopPredictionPath(timelines: any[]): 'optimal' | 'drift' | 'bottleneck' {
+  const candidates = timelines
+    .filter((timeline) => timeline && ['optimal', 'drift', 'bottleneck'].includes(timeline.pathType))
+    .map((timeline) => ({ path: timeline.pathType, probability: Number(timeline.probability) || 0 }));
+  const top = candidates.sort((a, b) => b.probability - a.probability)[0];
+  return top?.path || 'optimal';
+}
+
+function persistPredictionBestEffort(
+  req: AuthRequest,
+  context: unknown,
+  payload: any,
+  startedAt: number
+) {
+  const predictionId = randomUUID();
+  const timelines = Array.isArray(payload?.timelines) ? payload.timelines : [];
+  const probabilityFor = (pathType: string) =>
+    Number(timelines.find((timeline: any) => timeline?.pathType === pathType)?.probability) || 0;
+
+  void (async () => {
+    const userUid = req.user?.uid ?? null;
+    if (userUid) {
+      const userEmail = 'email' in (req.user || {}) ? req.user?.email : undefined;
+      if (userEmail) await getOrCreateUserRecord(userUid, userEmail);
+    }
+    await insertPredictionSnapshot({
+      id: predictionId,
+      userUid,
+      sessionId: typeof req.headers['x-session-id'] === 'string' ? req.headers['x-session-id'] : null,
+      context,
+      payload,
+      driftProb: probabilityFor('drift'),
+      crashProb: probabilityFor('bottleneck'),
+      flowProb: probabilityFor('optimal'),
+      predictedPath: pickTopPredictionPath(timelines),
+      modelVersion: payload?._meta?.model || (ai ? 'gemini' : 'smart-fallback'),
+      promptVersion: 'v1',
+      latencyMs: Date.now() - startedAt,
+    });
+  })().catch((error) => {
+    console.error('[predict] persistence failed:', error?.message || error);
+  });
+
+  return predictionId;
+}
+
 /**
  * POST /api/predict
  * Analyzes the user's project context, energy level, constraints, and behavioral flags.
  * Projects 3 future timelines, decomposes work into atomic programmer micro-steps,
  * and identifies critical bottlenecks and risk factors.
  */
-app.post('/api/predict', createRateLimitMiddleware('ai_standard', 1), async (req: Request, res: Response) => {
+app.post('/api/predict', createRateLimitMiddleware('ai_standard', 1), requireAuth, async (req: AuthRequest, res: Response) => {
+  const startedAt = Date.now();
   try {
     const { context } = req.body;
     if (!context || !context.title) {
@@ -113,7 +163,8 @@ app.post('/api/predict', createRateLimitMiddleware('ai_standard', 1), async (req
     if (cached.hit && cached.data) {
       res.setHeader('X-Cache-Status', 'HIT');
       res.setHeader('X-Cache-Latency-Saved-Ms', cached.latencySavedMs || 0);
-      return res.json(cached.data);
+      const predictionId = persistPredictionBestEffort(req, context, cached.data, startedAt);
+      return res.json({ ...cached.data, predictionId });
     }
     res.setHeader('X-Cache-Status', 'MISS');
 
@@ -121,7 +172,8 @@ app.post('/api/predict', createRateLimitMiddleware('ai_standard', 1), async (req
       console.warn('[api/predict] GEMINI_API_KEY not configured, returning smart synthesized prediction');
       const fallback = buildSmartFallbackPrediction(context);
       smartCache.set(cacheKey, fallback, 'medium');
-      return res.json(fallback);
+      const predictionId = persistPredictionBestEffort(req, context, fallback, startedAt);
+      return res.json({ ...fallback, predictionId });
     }
 
     const systemInstruction = `
@@ -251,7 +303,8 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
       const text = response.text || '';
       const parsed = JSON.parse(cleanJsonResponse(text));
       smartCache.set(cacheKey, parsed, 'medium');
-      return res.json(parsed);
+      const predictionId = persistPredictionBestEffort(req, context, parsed, startedAt);
+      return res.json({ ...parsed, predictionId });
     } catch (aiErr: any) {
       console.warn(
         '[api/predict] Upstream Gemini model experienced high demand (503) or transient spike. Seamlessly serving smart synthesized forecast:',
@@ -259,11 +312,59 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
       );
       const fallback = buildSmartFallbackPrediction(context);
       smartCache.set(cacheKey, fallback, 'medium');
-      return res.json(fallback);
+      const predictionId = persistPredictionBestEffort(req, context, fallback, startedAt);
+      return res.json({ ...fallback, predictionId });
     }
   } catch (err: any) {
     console.error('Error in /api/predict:', err);
-    return res.json(buildSmartFallbackPrediction(req.body?.context));
+    const fallback = buildSmartFallbackPrediction(req.body?.context);
+    const predictionId = persistPredictionBestEffort(req, req.body?.context, fallback, startedAt);
+    return res.json({ ...fallback, predictionId });
+  }
+});
+
+app.post('/api/predictions/:predictionId/outcomes', requireAuth, async (req: AuthRequest, res: Response) => {
+  const actualPath = req.body?.actualPath === 'crash' ? 'bottleneck' : req.body?.actualPath;
+  if (!['optimal', 'drift', 'bottleneck'].includes(actualPath)) {
+    return res.status(400).json({ error: 'actualPath must be optimal, drift, or crash' });
+  }
+  if (!req.user?.uid) return res.status(401).json({ error: 'authentication_required' });
+
+  try {
+    const outcomeId = await insertPredictionOutcome({
+      id: randomUUID(),
+      predictionId: req.params.predictionId,
+      userUid: req.user.uid,
+      actualPath,
+      actualDriftScore: typeof req.body?.actualDriftScore === 'number' ? req.body.actualDriftScore : null,
+      source: ['auto', 'user', 'manual'].includes(req.body?.source) ? req.body.source : 'user',
+      notes: typeof req.body?.notes === 'string' ? req.body.notes : null,
+    });
+    if (!outcomeId) return res.status(404).json({ error: 'prediction_not_found' });
+    return res.status(201).json({ outcomeId });
+  } catch (error: any) {
+    console.error('[predictions/outcomes] persistence failed:', error?.message || error);
+    return res.status(500).json({ error: 'outcome_persistence_failed' });
+  }
+});
+
+app.get('/api/admin/backtest', async (req: Request, res: Response) => {
+  if (!process.env.ADMIN_TOKEN || req.header('x-admin-token') !== process.env.ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+
+  const requestedDays = Number(req.query.days ?? 7);
+  const days = Number.isFinite(requestedDays) ? Math.min(90, Math.max(1, requestedDays)) : 7;
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+
+  try {
+    const report = await runBacktest({ from, to, minAgeHours: 24 });
+    const verdict = assertThresholds(report);
+    return res.status(verdict.pass ? 200 : 500).json({ report, verdict });
+  } catch (error: any) {
+    console.error('[admin/backtest] failed:', error?.message || error);
+    return res.status(500).json({ error: 'backtest_failed' });
   }
 });
 

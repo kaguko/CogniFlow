@@ -5,6 +5,7 @@ export * from './hooks/usePrediction';
 export * from './backtesting';
 
 export interface PredictionPayload {
+  predictionId?: string;
   timelines: import('./valueObjects').FutureTimeline[];
   microSteps: import('../microStep/entities/microStep').MicroStep[];
   bottlenecks: import('../bottleneck/entities/bottleneckItem').BottleneckItem[];

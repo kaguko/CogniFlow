@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { PredictionPayload } from '../mod';
 import { ProjectContext } from '../../projectContext/entities/projectContext';
 import { decomposeOffline } from '../../services/offlineDecomposer';
+import { auth } from '../../lib/firebase';
 
 export interface UsePredictionOptions {
   initialData: PredictionPayload;
@@ -23,9 +24,12 @@ export function usePrediction({ initialData }: UsePredictionOptions) {
 
       try {
         setIsLoading(true);
+        const token = await auth.currentUser?.getIdToken();
+        const headers: HeadersInit = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
         const res = await fetch('/api/predict', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({ context }),
         });
 

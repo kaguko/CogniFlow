@@ -7,6 +7,7 @@ import {
   timestamp,
   jsonb,
   index,
+  real,
   customType,
 } from 'drizzle-orm/pg-core';
 
@@ -110,8 +111,55 @@ export const taskQueue = pgTable(
   })
 );
 
+export const predictions = pgTable(
+  'predictions',
+  {
+    id: text('id').primaryKey(),
+    userUid: text('user_uid').references(() => users.uid, { onDelete: 'cascade' }),
+    sessionId: text('session_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    context: jsonb('context').notNull(),
+    payload: jsonb('payload').notNull(),
+    driftProb: real('drift_prob').notNull(),
+    crashProb: real('crash_prob').notNull(),
+    flowProb: real('flow_prob').notNull(),
+    predictedPath: text('predicted_path').notNull(),
+    modelVersion: text('model_version'),
+    promptVersion: text('prompt_version'),
+    latencyMs: real('latency_ms'),
+  },
+  (table) => ({
+    createdAtIdx: index('predictions_created_at_idx').on(table.createdAt),
+    pathIdx: index('predictions_path_idx').on(table.predictedPath),
+    userCreatedAtIdx: index('predictions_user_created_at_idx').on(table.userUid, table.createdAt),
+  })
+);
+
+export const outcomes = pgTable(
+  'outcomes',
+  {
+    id: text('id').primaryKey(),
+    predictionId: text('prediction_id')
+      .references(() => predictions.id, { onDelete: 'cascade' })
+      .notNull()
+      .unique(),
+    userUid: text('user_uid').references(() => users.uid, { onDelete: 'cascade' }),
+    evaluatedAt: timestamp('evaluated_at', { withTimezone: true }).defaultNow().notNull(),
+    actualPath: text('actual_path').notNull(),
+    actualDriftScore: real('actual_drift_score'),
+    source: text('source').notNull().default('auto'),
+    notes: text('notes'),
+  },
+  (table) => ({
+    evaluatedAtIdx: index('outcomes_evaluated_at_idx').on(table.evaluatedAt),
+    predictionIdx: index('outcomes_prediction_idx').on(table.predictionId),
+  })
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   notes: many(notes),
+  predictions: many(predictions),
+  outcomes: many(outcomes),
 }));
 
 export const notesRelations = relations(notes, ({ one }) => ({

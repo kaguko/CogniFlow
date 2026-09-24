@@ -1,0 +1,33 @@
+name: Daily Backtest
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run backtest against production
+        id: backtest
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          ADMIN_TOKEN: ${{ secrets.ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsS -H "x-admin-token: ${ADMIN_TOKEN}" \
+            "${APP_URL}/api/admin/backtest?days=7" > backtest-report.json
+          jq . backtest-report.json
+
+      - name: Upload report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backtest-report-${{ github.run_id }}
+          path: backtest-report.json
+          retention-days: 90
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "::warning::Daily backtest failed; inspect the uploaded report artifact."
