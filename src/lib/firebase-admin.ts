@@ -1,8 +1,18 @@
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import firebaseAppletConfig from '../../firebase-applet-config.json';
+import fs from 'fs';
+import path from 'path';
 
-const rawConfig = (firebaseAppletConfig || {}) as Record<string, string | undefined>;
+let rawConfig: Record<string, string | undefined> = {};
+
+try {
+  const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    rawConfig = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+  }
+} catch {
+  // Ignore missing or malformed config
+}
 
 const projectId =
   process.env.FIREBASE_PROJECT_ID ||
