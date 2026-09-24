@@ -124,6 +124,20 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
   - `[Esc]`: Thoát Chế độ Tập Trung hoặc Đóng Modal lập tức.
 - Tự động bỏ qua phím tắt khi người dùng đang gõ văn bản trong input/textarea, bảo đảm **0% gõ nhầm / ma sát**.
 
+### 6. 📈 Biểu Đồ Xu Hướng Sệch Hướng & Căn Chỉnh Kế Hoạch (Drift Score & Goal Alignment Evolution Visualizer)
+- **Trực quan hóa đa chuỗi dữ liệu (Multi-Series Recharts Visualization)**:
+  - Đường/Vùng **Drift Score** (Sệch Hướng, Rose `#f43f5e`): Giám sát tỷ lệ vi bước mồ côi không gắn mục tiêu dài hạn.
+  - Đường/Vùng **Goal Alignment Index** (Căn Chỉnh Mục Tiêu, Indigo `#6366f1`): Theo dõi tỷ lệ bảo vệ kế hoạch chiến lược ($100 - \text{driftScore}$).
+  - Đường **Focus Efficiency Score** (Hiệu Suất Tập Trung, Emerald `#10b981`): Đối sánh trực tiếp mức độ duy trì dòng chảy công việc.
+- **Chuyển đổi góc nhìn linh hoạt**:
+  - **Theo Tiến Trình Phiên (Session Timeline)**: Quan sát tiến trình biến thiên qua 6 mốc thời gian thực từ $T-90\text{m}$ đến *Hiện tại*.
+  - **Theo Chuỗi Vi Bước (Execution Steps)**: Bóc tách từng vi bước hoàn thành và liên kết mục tiêu.
+  - **Lịch Sử 7 Ngày**: Đánh giá sự tiến hóa năng suất và kiểm soát sệch hướng qua từng ngày.
+- **Tương tác & Kiểm soát nâng cao**:
+  - Tùy chọn kiểu đồ thị **Vùng Phủ (Area Gradient)** hoặc **Đường Nối (Line Chart)**.
+  - Đường **Ngưỡng An Toàn Sệch Hướng ($\le 15\%$)** hỗ trợ bật/tắt linh hoạt.
+  - Bảng cảnh báo thông minh tự động đưa ra mẹo điều hướng (*VD: "Dùng phím Alt + 1 để gán vi bước mồ côi vào Goal Canvas"*).
+
 ---
 
 ## ⚡ Hệ Thống Tính Năng Toàn Diện
@@ -168,6 +182,9 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
 - **RAG QA Copilot**: Trả lời câu hỏi kỹ thuật kèm trích dẫn tài liệu ngữ cảnh chính xác.
 
 ### 7. 📊 Behavioral Analytics & Productivity Trends (Recharts)
+- **Drift Score & Goal Alignment Evolution**: Biểu đồ Recharts đối sánh trực quan chỉ số **Sệch Hướng (`driftScore` %)**, **Căn Chỉnh Mục Tiêu (`100 - drift` %)** và **Điểm Tập Trung (`focusEfficiencyScore` %)** qua từng mốc phiên làm việc.
+  - Tích hợp 3 góc nhìn: Theo tiến trình phiên ($T-90\text{m} \to \text{Hiện tại}$), Theo chuỗi vi bước (`steps`), hoặc Lịch sử 7 ngày.
+  - Đường ngưỡng an toàn Drift ($\le 15\%$) kèm tùy chọn hiển thị Vùng Phủ (Area Gradient) hoặc Đường Nối (Line).
 - **Productivity & Cognitive Friction Trends**: Biểu đồ đường (Line Chart) Recharts tương tác cao đối sánh **Điểm Tập Trung (`focusEfficiencyScore`)** và **Chỉ Số Ma Sát Ra Quyết Định (`decisionFrictionIndex`)** theo thời gian thực.
   - **Khung thời gian đa dạng**: 7 ngày gần nhất, 14 ngày hoặc bám sát theo từng vi bước thực thi (`steps`).
   - **Bộ lọc chỉ số linh hoạt**: Xem cả hai chỉ số đồng thời, hoặc lọc riêng điểm tập trung / ma sát quyết định.
@@ -328,8 +345,11 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 
 ---
 
-## 🧪 Kiểm Thử & Đóng Gói (Build & Verification)
+## 🧪 Kiểm Thử, Automated CI/CD & Đóng Gói (Build & Verification)
 
+- **Quy Trình Tự Động Hóa CI/CD (`.github/workflows/deploy.yml`)**:
+  - Tự động hóa kiểm tra toàn diện mã nguồn trên mỗi lệnh `git push` hoặc `pull_request` vào nhánh `main`.
+  - Thực thi tự động kiểm tra linter (`npm run lint`), biên dịch mã nguồn TypeScript (`npm run build`) và xác minh thư mục sản phẩm đóng gói (`dist`).
 - **Kiểm tra kiểu dữ liệu & cú pháp TypeScript**:
   ```bash
   npm run lint
