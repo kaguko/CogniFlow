@@ -115,6 +115,15 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
 - **Thiết kế hoàn toàn thụ động (100% Passive)**: Không tự động popup hay ngắt quãng trạng thái tập trung (Flow State) của lập trình viên. Chỉ kích hoạt khi người dùng chủ động bấm nút.
 - Sử dụng **Gemini Pro** để thực hiện Deep Reasoning, bóc tách rủi ro kinh doanh, thách thức bẫy tối ưu sớm và hướng dẫn tạo bản thô (dumb version) trong 30 phút.
 
+### 5. 🎹 Trình Quản Lý Phím Tắt Global (Keyboard Shortcut Manager) & Distraction-Free Focus Mode
+- Tích hợp **`react-hotkeys-hook`** giúp lập trình viên điều hướng ứng dụng thuần bằng bàn phím mà không cần chạm chuột:
+  - `[1] - [8]` hoặc `[Alt + 1..8]`: Chuyển đổi tab siêu tốc (*Vi bước, Goal Canvas, Horizon, Bottlenecks, Decision Copilot, Behavioral Trends, RAG Knowledge, JSONB Strategy*).
+  - `[Shift + C]` hoặc `[Alt + C]`: Kích hoạt ngay cố vấn phản Biện **"Challenge Me" (Gemini Pro Socratic Advisor)**.
+  - `[Shift + F]` hoặc `[Alt + F]`: Bật / Tắt **Chế độ tập trung tuyệt đối (Focus Mode)** — tự động ẩn toàn bộ sidebar, header điều hướng để loại bỏ mọi tác nhân xao nhãng.
+  - `[Shift + ?]` hoặc `[?]`: Mở Bảng gian lận phím tắt (**Keyboard Shortcuts Cheat Sheet Modal**).
+  - `[Esc]`: Thoát Chế độ Tập Trung hoặc Đóng Modal lập tức.
+- Tự động bỏ qua phím tắt khi người dùng đang gõ văn bản trong input/textarea, bảo đảm **0% gõ nhầm / ma sát**.
+
 ---
 
 ## ⚡ Hệ Thống Tính Năng Toàn Diện

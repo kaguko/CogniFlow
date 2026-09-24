@@ -1,5 +1,10 @@
 import React, { useState } from 'react';
 import { DEFAULT_PRESET_CONTEXTS, INITIAL_PREDICTION_DATA, DEFAULT_LONG_TERM_GOALS } from './data/defaultPresets';
+import { Eye, EyeOff, Sparkles, X, Keyboard } from 'lucide-react';
+
+// Global Keyboard Shortcuts
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { ShortcutHelpModal } from './components/ShortcutHelpModal';
 
 // Domain Bounded Contexts - Public APIs
 import { ProjectContext, ContextEditorModal, ZoomLevel } from './projectContext';
@@ -22,6 +27,30 @@ export default function App() {
   const [currentZoom, setCurrentZoom] = useState<ZoomLevel>('micro_focus');
   const [activeTab, setActiveTab] = useState<string>('microsteps');
   const [isContextModalOpen, setIsContextModalOpen] = useState(false);
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
+  const [isFocusMode, setIsFocusMode] = useState(false);
+
+  // Global Keyboard Shortcut Manager (react-hotkeys-hook)
+  useGlobalShortcuts({
+    onSelectTab: (tab) => handleTabChange(tab),
+    onOpenChallengeMe: () => {
+      handleTabChange('microsteps');
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('open-socratic-challenge'));
+      }, 50);
+    },
+    onToggleFocusMode: () => {
+      setIsFocusMode((prev) => !prev);
+    },
+    onToggleHelpModal: () => {
+      setIsShortcutHelpOpen((prev) => !prev);
+    },
+    onEscape: () => {
+      if (isShortcutHelpOpen) setIsShortcutHelpOpen(false);
+      else if (isFocusMode) setIsFocusMode(false);
+      else if (isContextModalOpen) setIsContextModalOpen(false);
+    },
+  });
 
   // Prediction Domain Hook
   const { prediction, setPrediction, isLoading, fetchPrediction } = usePrediction({
@@ -256,42 +285,73 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
+      {/* Active Focus Mode Distraction-Free Top Indicator */}
+      {isFocusMode && (
+        <div className="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 border-b border-indigo-500/50 px-4 py-2 flex items-center justify-between text-xs text-indigo-200 animate-in slide-in-from-top duration-300 sticky top-0 z-50 backdrop-blur-md shadow-xl shadow-indigo-500/10">
+          <div className="flex items-center gap-2.5">
+            <Eye className="w-4 h-4 text-amber-400 animate-pulse shrink-0" />
+            <span className="font-bold tracking-wide">CHẾ ĐỘ TẬP TRUNG TUYỆT ĐỐI (FOCUS MODE)</span>
+            <span className="text-slate-400 hidden sm:inline text-[11px]">— Đã ẩn sidebar &amp; thanh điều hướng phụ để triệt tiêu xao nhãng</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-mono text-indigo-300 hidden md:inline">
+              Bấm <kbd className="px-1.5 py-0.5 rounded bg-indigo-900/80 border border-indigo-700 text-amber-300">Shift + F</kbd> hoặc <kbd className="px-1.5 py-0.5 rounded bg-indigo-900/80 border border-indigo-700 text-amber-300">Esc</kbd> để thoát
+            </span>
+            <button
+              onClick={() => setIsFocusMode(false)}
+              className="px-2.5 py-1 rounded bg-indigo-900/80 hover:bg-indigo-800 text-indigo-100 font-semibold text-xs flex items-center gap-1 transition-colors border border-indigo-700/60"
+            >
+              <EyeOff className="w-3.5 h-3.5" />
+              <span>Thoát Focus</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 3-Zone Top Bar */}
-      <Header
-        currentContext={currentContext}
-        onOpenContextModal={() => setIsContextModalOpen(false || true)}
-        onRefreshPrediction={() => fetchPrediction(currentContext)}
-        isLoading={isLoading}
-        activeTab={activeTab}
-        setActiveTab={handleTabChange}
-      />
-
-      {/* Version 2.0 Zoom In – Zoom Out Controller */}
-      <ZoomController
-        currentZoom={currentZoom}
-        onZoomChange={handleZoomChange}
-        activeGoalTitle={activeGoal?.title}
-        driftScore={currentDriftScore}
-      />
-
-      {/* Main Workspace: Sidebar + Viewport */}
-      <div className="flex-1 flex flex-col md:flex-row">
-        {/* Left Navigation Sidebar */}
-        <Sidebar
+      {!isFocusMode && (
+        <Header
+          currentContext={currentContext}
+          onOpenContextModal={() => setIsContextModalOpen(true)}
+          onRefreshPrediction={() => fetchPrediction(currentContext)}
+          isLoading={isLoading}
           activeTab={activeTab}
           setActiveTab={handleTabChange}
-          currentContext={currentContext}
-          presets={DEFAULT_PRESET_CONTEXTS}
-          onSelectPreset={handleSelectPreset}
-          pendingMicroStepsCount={pendingMicroStepsCount}
-          criticalBottlenecksCount={criticalBottlenecksCount}
-          goalsCount={longTermGoals.length}
+          onOpenShortcutModal={() => setIsShortcutHelpOpen(true)}
+          isFocusMode={isFocusMode}
+        />
+      )}
+
+      {/* Version 2.0 Zoom In – Zoom Out Controller */}
+      {!isFocusMode && (
+        <ZoomController
+          currentZoom={currentZoom}
+          onZoomChange={handleZoomChange}
           activeGoalTitle={activeGoal?.title}
           driftScore={currentDriftScore}
         />
+      )}
+
+      {/* Main Workspace: Sidebar + Viewport */}
+      <div className="flex-1 flex flex-col md:flex-row">
+        {/* Left Navigation Sidebar (Hidden in Focus Mode for Zero Distraction) */}
+        {!isFocusMode && (
+          <Sidebar
+            activeTab={activeTab}
+            setActiveTab={handleTabChange}
+            currentContext={currentContext}
+            presets={DEFAULT_PRESET_CONTEXTS}
+            onSelectPreset={handleSelectPreset}
+            pendingMicroStepsCount={pendingMicroStepsCount}
+            criticalBottlenecksCount={criticalBottlenecksCount}
+            goalsCount={longTermGoals.length}
+            activeGoalTitle={activeGoal?.title}
+            driftScore={currentDriftScore}
+          />
+        )}
 
         {/* Content Viewport */}
-        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
+        <main className={`flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full transition-all ${isFocusMode ? 'py-8' : ''}`}>
           {/* TẦNG 1: Long-term Goal Planning & Horizon View */}
           {activeTab === 'goals' && (
             <GoalCanvasView
@@ -368,6 +428,13 @@ export default function App() {
         currentContext={currentContext}
         onSaveContext={handleSaveContext}
       />
+
+      {/* Keyboard Shortcuts Cheat Sheet Modal */}
+      <ShortcutHelpModal
+        isOpen={isShortcutHelpOpen}
+        onClose={() => setIsShortcutHelpOpen(false)}
+      />
     </div>
   );
+
 }

@@ -193,6 +193,14 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const [isChallenging, setIsChallenging] = useState(false);
   const [challengeResult, setChallengeResult] = useState<any | null>(null);
 
+  useEffect(() => {
+    const handleOpenChallenge = () => {
+      setShowChallengeModal(true);
+    };
+    window.addEventListener('open-socratic-challenge', handleOpenChallenge);
+    return () => window.removeEventListener('open-socratic-challenge', handleOpenChallenge);
+  }, []);
+
   // New step form state
   const [newTitle, setNewTitle] = useState('');
   const [newAction, setNewAction] = useState('');
