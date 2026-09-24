@@ -13,7 +13,7 @@ import {
   searchNotesSemantic,
   getOrCreateUserRecord,
 } from './src/db/rag.ts';
-import { insertPredictionOutcome, insertPredictionSnapshot } from './src/db/predictions.ts';
+import { insertPredictionOutcome, insertPredictionSnapshot, getPredictionById } from './src/db/predictions.ts';
 import { assertThresholds, runBacktest } from './src/lib/backtest.ts';
 import {
   generateContentWithFallback,
@@ -560,28 +560,67 @@ app.post('/api/predictions/:predictionId/outcomes', requireAuth, async (req: Aut
 
 /**
  * POST /api/outcomes & POST /api/v1/agent/outcomes
- * Feedback Loop endpoint to record actual execution outcome (optimal, drift, bottleneck)
- * and calculate the AI Accuracy Score in real-time.
+ * Feedback Loop endpoint to record actual execution outcome (SUCCESS, DRIFT, CRASH, ABANDONED)
+ * and calculate the AI Accuracy Score & False Positive Calibration in real-time.
  */
 const handleRecordOutcome = async (req: Request, res: Response) => {
   try {
     const body = req.body || {};
-    let actualPath = body.actualPath === 'crash' ? 'bottleneck' : body.actualPath;
-    if (!['optimal', 'drift', 'bottleneck'].includes(actualPath)) {
-      return res.status(400).json({
-        error: 'invalid_actual_path',
-        message: 'actualPath must be "optimal", "drift", or "bottleneck" (or "crash")',
+    const rawOutcomeStatus = String(
+      body.outcomeStatus || body.status || body.actualPath || 'SUCCESS'
+    ).toUpperCase();
+
+    // Normalize outcomeStatus to actualPath ('optimal' | 'drift' | 'bottleneck')
+    let actualPath: 'optimal' | 'drift' | 'bottleneck' = 'optimal';
+    let outcomeStatus = 'SUCCESS';
+
+    if (['DRIFT', 'DRIFTING'].includes(rawOutcomeStatus) || body.actualPath === 'drift') {
+      actualPath = 'drift';
+      outcomeStatus = 'DRIFT';
+    } else if (
+      ['CRASH', 'ABANDONED', 'BOTTLENECK', 'FAIL', 'FAILED'].includes(rawOutcomeStatus) ||
+      ['bottleneck', 'crash'].includes(body.actualPath)
+    ) {
+      actualPath = 'bottleneck';
+      outcomeStatus = rawOutcomeStatus === 'ABANDONED' ? 'ABANDONED' : 'CRASH';
+    } else {
+      actualPath = 'optimal';
+      outcomeStatus = 'SUCCESS';
+    }
+
+    const requestId = body.requestId || `req_${randomUUID().slice(0, 8)}`;
+    let predictionId = body.predictionId || body.prediction_id;
+    const isFalsePositiveDrift = Boolean(
+      body.isFalsePositiveDrift || body.userFeedback?.isFalsePositiveDrift
+    );
+    const notes =
+      typeof body.userFeedback?.notes === 'string'
+        ? body.userFeedback.notes
+        : typeof body.notes === 'string'
+        ? body.notes
+        : undefined;
+
+    // False Positive Loop: Register exemption in memory store
+    if (isFalsePositiveDrift) {
+      serverDriftFeedbackStore.push({
+        id: `fb_${randomUUID().slice(0, 8)}`,
+        taskId: requestId,
+        taskTitle: notes || 'False positive agent drift report',
+        detectedType: 'over_engineering',
+        isFalsePositive: true,
+        userReason: notes || 'Flagged false positive by Agent/User',
+        timestamp: Date.now(),
       });
     }
 
-    let predictionId = body.predictionId || body.prediction_id;
-    if (!predictionId) {
-      // Auto-create a snapshot if outcome submitted directly without prior prediction ID
-      predictionId = randomUUID();
+    let predictionSnapshot = predictionId ? await getPredictionById(predictionId) : null;
+
+    if (!predictionId || !predictionSnapshot) {
+      predictionId = predictionId || `pred_${randomUUID().slice(0, 8)}`;
       await insertPredictionSnapshot({
         id: predictionId,
         userUid: (req as any).user?.uid || null,
-        context: { autoCreatedFromOutcome: true },
+        context: { requestId, agentId: body.agentId },
         payload: { timelines: [{ pathType: actualPath, probability: 100 }] },
         driftProb: actualPath === 'drift' ? 100 : 0,
         crashProb: actualPath === 'bottleneck' ? 100 : 0,
@@ -589,9 +628,10 @@ const handleRecordOutcome = async (req: Request, res: Response) => {
         predictedPath: actualPath,
         modelVersion: 'agent-feedback',
       });
+      predictionSnapshot = await getPredictionById(predictionId);
     }
 
-    const outcomeId = randomUUID();
+    const outcomeId = `out_${randomUUID().slice(0, 8)}`;
     await insertPredictionOutcome({
       id: outcomeId,
       predictionId,
@@ -599,7 +639,7 @@ const handleRecordOutcome = async (req: Request, res: Response) => {
       actualPath,
       actualDriftScore: typeof body.actualDriftScore === 'number' ? body.actualDriftScore : null,
       source: ['auto', 'user', 'manual'].includes(body.source) ? body.source : 'auto',
-      notes: typeof body.notes === 'string' ? body.notes : null,
+      notes: notes || null,
     });
 
     const backtest = await runBacktest({
@@ -608,18 +648,29 @@ const handleRecordOutcome = async (req: Request, res: Response) => {
       minAgeHours: 0,
     });
 
+    const predictionMatched = predictionSnapshot
+      ? predictionSnapshot.predictedPath === actualPath
+      : true;
+    const updatedAgentPrecisionScore = Number(
+      (backtest.overallAccuracyScore * 100).toFixed(1)
+    );
+
     return res.status(201).json({
-      success: true,
+      contractVersion: '1.0',
+      status: 'RECORDED',
       outcomeId,
+      requestId,
       predictionId,
-      actualPath,
+      outcomeStatus,
+      accuracyDelta: {
+        predictionMatched,
+        updatedAgentPrecisionScore,
+      },
       accuracyMetrics: {
-        overallAccuracyScore: backtest.overallAccuracyScore,
         overallAccuracyPercent: backtest.overallAccuracyPercent,
         sampleSize: backtest.sampleSize,
-        driftHitRate: backtest.driftHitRate,
-        crashHitRate: backtest.crashHitRate,
-        optimalHitRate: backtest.optimalHitRate,
+        driftHitRate: Math.round(backtest.driftHitRate * 100) / 100,
+        crashHitRate: Math.round(backtest.crashHitRate * 100) / 100,
       },
     });
   } catch (error: any) {

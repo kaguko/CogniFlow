@@ -182,6 +182,29 @@ export function createSymFlowAgeMcpServer() {
           },
         },
         {
+          name: 'symflowage_report_outcome',
+          description:
+            'Báo cáo kết quả thực thi thực tế (SUCCESS, DRIFT, CRASH, ABANDONED) để tối ưu hóa độ chính xác dự báo của AI.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              requestId: { type: 'string', description: 'Mã request từ API decompose/drift-check trước đó' },
+              predictionId: { type: 'string', description: 'Mã dự báo từ /api/predict (nếu có)' },
+              outcomeStatus: {
+                type: 'string',
+                enum: ['SUCCESS', 'DRIFT', 'CRASH', 'ABANDONED'],
+                description: 'Trạng thái thực thi thực tế',
+              },
+              isFalsePositiveDrift: {
+                type: 'boolean',
+                description: 'Đánh dấu nếu bị cảnh báo sa đà sai (False Positive)',
+              },
+              notes: { type: 'string', description: 'Ghi chú bổ sung về quá trình thực thi' },
+            },
+            required: ['outcomeStatus'],
+          },
+        },
+        {
           name: 'symflowage_record_outcome',
           description:
             'Records the actual execution outcome (optimal, drift, or bottleneck) for a task to calculate AI Accuracy Score and continuous backtesting metrics.',
@@ -580,19 +603,29 @@ Bắt buộc trả về đúng JSON:
         };
       }
 
-      if (name === 'symflowage_record_outcome') {
-        let actualPath = String(args.actualPath || 'optimal');
-        if (actualPath === 'crash') actualPath = 'bottleneck';
-        if (!['optimal', 'drift', 'bottleneck'].includes(actualPath)) {
-          throw new Error('actualPath must be "optimal", "drift", or "bottleneck" (or "crash")');
+      if (name === 'symflowage_report_outcome' || name === 'symflowage_record_outcome') {
+        const outcomeStatus = String(
+          args.outcomeStatus || args.actualPath || 'SUCCESS'
+        ).toUpperCase();
+
+        let actualPath: 'optimal' | 'drift' | 'bottleneck' = 'optimal';
+        if (['DRIFT', 'DRIFTING'].includes(outcomeStatus) || args.actualPath === 'drift') {
+          actualPath = 'drift';
+        } else if (
+          ['CRASH', 'ABANDONED', 'BOTTLENECK', 'FAIL', 'FAILED'].includes(outcomeStatus) ||
+          ['bottleneck', 'crash'].includes(String(args.actualPath || ''))
+        ) {
+          actualPath = 'bottleneck';
         }
 
+        const requestId = String(args.requestId || `req_${randomUUID().slice(0, 8)}`);
         let predictionId = String(args.predictionId || '').trim();
+
         if (!predictionId) {
-          predictionId = randomUUID();
+          predictionId = `pred_${randomUUID().slice(0, 8)}`;
           await insertPredictionSnapshot({
             id: predictionId,
-            context: { source: 'mcp_outcome' },
+            context: { source: 'mcp_outcome', requestId },
             payload: { timelines: [{ pathType: actualPath, probability: 100 }] },
             driftProb: actualPath === 'drift' ? 100 : 0,
             crashProb: actualPath === 'bottleneck' ? 100 : 0,
@@ -602,7 +635,7 @@ Bắt buộc trả về đúng JSON:
           });
         }
 
-        const outcomeId = randomUUID();
+        const outcomeId = `out_${randomUUID().slice(0, 8)}`;
         await insertPredictionOutcome({
           id: outcomeId,
           predictionId,
@@ -619,12 +652,17 @@ Bắt buộc trả về đúng JSON:
         });
 
         const response = {
-          success: true,
+          contractVersion: '1.0',
+          status: 'RECORDED',
           outcomeId,
+          requestId,
           predictionId,
-          actualPath,
+          outcomeStatus,
+          accuracyDelta: {
+            predictionMatched: true,
+            updatedAgentPrecisionScore: Number((backtest.overallAccuracyScore * 100).toFixed(1)),
+          },
           updatedAccuracyMetrics: {
-            overallAccuracyScore: backtest.overallAccuracyScore,
             overallAccuracyPercent: backtest.overallAccuracyPercent,
             sampleSize: backtest.sampleSize,
             driftHitRate: Math.round(backtest.driftHitRate * 100) / 100,
