@@ -1,6 +1,7 @@
 import React from 'react';
 import { ProjectContext, EnergyLevel } from '../types';
 import { Sparkles, BatteryCharging, BatteryWarning, BatteryMedium, PlusCircle, Keyboard } from 'lucide-react';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderProps {
   currentContext: ProjectContext;
@@ -148,6 +149,8 @@ export const Header: React.FC<HeaderProps> = ({
             {getEnergyLabel(currentContext.energyLevel)}
           </span>
         </div>
+
+        <PWAInstallButton />
 
         <button
           onClick={onRefreshPrediction}

@@ -21,6 +21,8 @@ import { Sidebar } from './components/Sidebar';
 import { ZoomController } from './components/ZoomController';
 import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
 import { JsonbIndexStrategyView } from './components/JsonbIndexStrategyView';
+import { OfflineIndicator } from './components/OfflineIndicator';
+import { decomposeOffline } from './services/offlineDecomposer';
 
 export default function App() {
   const [currentContext, setCurrentContext] = useState<ProjectContext>(DEFAULT_PRESET_CONTEXTS[0]);
@@ -435,6 +437,9 @@ export default function App() {
         isOpen={isShortcutHelpOpen}
         onClose={() => setIsShortcutHelpOpen(false)}
       />
+
+      {/* Offline Connectivity & Rule Engine Status Indicator */}
+      <OfflineIndicator />
     </div>
   );
 

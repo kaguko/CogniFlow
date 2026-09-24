@@ -138,6 +138,14 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
   - Đường **Ngưỡng An Toàn Sệch Hướng ($\le 15\%$)** hỗ trợ bật/tắt linh hoạt.
   - Bảng cảnh báo thông minh tự động đưa ra mẹo điều hướng (*VD: "Dùng phím Alt + 1 để gán vi bước mồ côi vào Goal Canvas"*).
 
+### 7. 📶 Chế Độ Offline Tự Động & Động Cơ Phân Rã Quy Tắc Tắc Địa (Offline Mode & Local Rule Engine PWA)
+- **Hoạt động không cần Internet (Zero Network Dependency)**:
+  - Khi mất kết nối mạng, hệ thống tự động kích hoạt **Offline Heuristic Engine (`offlineDecomposer.ts`)**.
+  - Tự động bóc tách từ khóa (Domain, Backend, Frontend, Docs/Planning) để phân rã nhiệm vụ thành các vi bước chuẩn $\le 12$ phút mà không cần đợi AI server.
+- **Biểu Tượng Trạng Thái & Bảng Cài Đặt PWA**:
+  - Bảng thông báo **Offline Indicator** hiển thị thời gian thực ở góc màn hình báo hiệu $0\text{ms Latency}$.
+  - Hỗ trợ cài đặt ứng dụng chuẩn PWA (**Progressive Web App**) cho Desktop, Android và iOS Safari với Service Worker precaching toàn bộ tài nguyên static.
+
 ---
 
 ## ⚡ Hệ Thống Tính Năng Toàn Diện

@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { PredictionPayload } from '../mod';
 import { ProjectContext } from '../../projectContext/entities/projectContext';
+import { decomposeOffline } from '../../services/offlineDecomposer';
 
 export interface UsePredictionOptions {
   initialData: PredictionPayload;
@@ -12,6 +13,14 @@ export function usePrediction({ initialData }: UsePredictionOptions) {
 
   const fetchPrediction = useCallback(
     async (context: ProjectContext) => {
+      // Check offline status first
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        console.info('[Offline Engine] Generating local microstep decomposition');
+        const offlineResult = decomposeOffline(context);
+        setPrediction(offlineResult);
+        return;
+      }
+
       try {
         setIsLoading(true);
         const res = await fetch('/api/predict', {
@@ -26,15 +35,9 @@ export function usePrediction({ initialData }: UsePredictionOptions) {
           setPrediction(data);
         }
       } catch (err) {
-        console.warn('Using intelligent local forecast engine fallback', err);
-        setPrediction((prev) => ({
-          ...prev,
-          strategicWhySummary: `Vấn đề thực sự của "${context.title}" là giảm tải nhận thức và cô lập các biến số rủi ro. Thay vì cố gắng giải quyết toàn diện cùng lúc, hãy chia bài toán thành các phân vùng kiểm thử 10 phút.`,
-          timelines: prev.timelines.map((t) => ({
-            ...t,
-            probability: t.pathType === 'optimal' ? 82 : t.pathType === 'drift' ? 40 : 20,
-          })),
-        }));
+        console.warn('Network or API error, switching seamlessly to offline Rule Engine', err);
+        const offlineResult = decomposeOffline(context);
+        setPrediction(offlineResult);
       } finally {
         setIsLoading(false);
       }
