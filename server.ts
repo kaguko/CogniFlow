@@ -336,10 +336,19 @@ app.post(
     const rabbitHoleDrift = semantic.detectedRabbitHoles.length > 0 ? 40 : 0;
     const driftScore = Math.min(100, Math.max(0, Math.max(overlapDrift, rabbitHoleDrift)));
     const status = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+    const requestId = randomUUID();
+    const circuitEval = evaluateAndTriggerCircuitBreaker({
+      agentId: req.agentId,
+      requestId,
+      driftScore,
+      decision: status,
+      detectedPatterns: semantic.detectedRabbitHoles.map((rabbitHole: any) => rabbitHole.type || rabbitHole.taskTitle),
+      recommendedAction: 'Thu hẹp hành động về mục tiêu cốt lõi trước khi tiếp tục',
+    });
 
     return res.json({
       contractVersion: 'agent.v1',
-      requestId: randomUUID(),
+      requestId,
       agentId: req.agentId,
       originalGoal,
       driftScore,
@@ -353,6 +362,11 @@ app.post(
           : status === 'WARN'
           ? 'Agent output needs human review before execution.'
           : 'Agent output remains aligned with the original goal.',
+      circuitBreaker: {
+        triggered: circuitEval.triggered,
+        circuitStatus: circuitEval.circuitStatus,
+        reason: circuitEval.reason,
+      },
     });
   }
 );

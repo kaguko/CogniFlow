@@ -22,6 +22,7 @@ import {
   updateCircuitBreakerConfig,
   registerSseAlertSubscriber,
 } from '../lib/circuitBreaker.ts';
+import { requireAgentAuth } from '../middleware/agentAuth.ts';
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -805,7 +806,7 @@ const sseTransports = new Map<string, SSEServerTransport>();
 export function mountMcpRoutes(app: any) {
   // 1. JSON-RPC Direct HTTP POST endpoint (/api/mcp)
   // For lightweight HTTP JSON-RPC tools invocation by Cursor / Windsurf / Custom Agents
-  app.post('/api/mcp', async (req: any, res: any) => {
+  app.post('/api/mcp', requireAgentAuth, async (req: any, res: any) => {
     try {
       const server = createSymFlowAgeMcpServer();
       const jsonRpcRequest = req.body;
@@ -950,7 +951,7 @@ export function mountMcpRoutes(app: any) {
 
   // 2. Server-Sent Events (SSE) Transport (/api/mcp/sse)
   // Standard MCP SSE Transport for Anthropic Claude Desktop, Cursor AI, Windsurf
-  app.get('/api/mcp/sse', async (req: any, res: any) => {
+  app.get('/api/mcp/sse', requireAgentAuth, async (req: any, res: any) => {
     try {
       const transport = new SSEServerTransport('/api/mcp/messages', res);
       const sessionId = transport.sessionId;
@@ -981,7 +982,7 @@ export function mountMcpRoutes(app: any) {
   });
 
   // 3. Messages POST endpoint for SSE sessions (/api/mcp/messages)
-  app.post('/api/mcp/messages', async (req: any, res: any) => {
+  app.post('/api/mcp/messages', requireAgentAuth, async (req: any, res: any) => {
     const sessionId = String(req.query.sessionId || '');
     const transport = sseTransports.get(sessionId);
 

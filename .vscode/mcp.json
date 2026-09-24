@@ -1,0 +1,19 @@
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "symflowage-m2m-key",
+      "description": "SymFlowAge M2M API key",
+      "password": true
+    }
+  ],
+  "servers": {
+    "symflowage": {
+      "type": "sse",
+      "url": "http://localhost:3000/api/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer ${input:symflowage-m2m-key}"
+      }
+    }
+  }
+}

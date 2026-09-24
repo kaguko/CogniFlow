@@ -73,12 +73,20 @@ SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho
 #### Cấu hình kết nối SSE Stream (Khuyến nghị cho Real-time Guardrail Alert):
 ```json
 {
-  "mcpServers": {
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "symflowage-m2m-key",
+      "description": "SymFlowAge M2M API key",
+      "password": true
+    }
+  ],
+  "servers": {
     "symflowage": {
+      "type": "sse",
       "url": "http://localhost:3000/api/mcp/sse",
-      "transport": "sse",
       "headers": {
-        "Authorization": "Bearer test_m2m_secret_key_123"
+        "Authorization": "Bearer ${input:symflowage-m2m-key}"
       }
     }
   }
@@ -135,6 +143,14 @@ Nếu bạn dùng **Cline**, **Roo Code**, **Cursor AI**, hoặc **Claude Deskto
   * **Kỳ vọng**: SymFlowAge phát hiện bẫy `reinventing_wheel` & `over_engineering`, đẩy Drift Score lên cao, trả về quyết định `BLOCK` và bắn sự kiện SSE `HALT_EXECUTION`. Agent trên VS Code sẽ ngay lập tức **dừng việc sinh code** và thông báo lý do bị ngắt mạch cho bạn.
 * **Test Case 3: Đóng vòng lặp Feedback Loop**
   * Sau khi hoàn thành hoặc hủy bỏ công việc, Agent sẽ tự động gọi tool `symflowage_report_outcome` để gửi báo cáo `SUCCESS` hoặc `DRIFT`, giúp hệ thống tính toán **Accuracy Score** thời gian thực.
+* **Test Case 4: Gemini lỗi, hết quota hoặc bị rate limit**
+  * Chạy test fallback không cần gọi quota thật:
+    ```bash
+    env -u GEMINI_API_KEY -u VITE_GEMINI_API_KEY \
+      SYMFLOWAGE_M2M_API_KEY=test-agent-key \
+      npx playwright test tests/fallback.spec.ts
+    ```
+  * Kỳ vọng: API vẫn trả decomposition contract có micro-steps; khi mô phỏng lỗi `429 RESOURCE_EXHAUSTED`, resilience engine thử model kế tiếp.
 
 
 ---
@@ -566,6 +582,8 @@ SymFlowAge hỗ trợ chuẩn **Model Context Protocol (MCP)** qua hai giao th�
 1. **Direct HTTP JSON-RPC** (`POST /api/mcp`)
 2. **Server-Sent Events (SSE)** (`GET /api/mcp/sse` & `POST /api/mcp/messages`)
 
+Tất cả MCP transport đều yêu cầu `Authorization: Bearer <SYMFLOWAGE_M2M_API_KEY>`. File workspace [`.vscode/mcp.json`](.vscode/mcp.json) đã được cấu hình để VS Code hỏi M2M key dưới dạng password. Khi versioned guardrail trả về `BLOCK`, Circuit Breaker phát `event: guardrail_alert` với `action: HALT_EXECUTION` trên SSE.
+
 ### 🚨 Real-time Guardrail Circuit Breaker (Webhook & SSE Alert)
 
 SymFlowAge trang bị cơ chế **Circuit Breaker tự động ngắt luồng Agent** khi phát hiện sa đà nghiêm trọng:
@@ -629,6 +647,8 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 3. **Smart Synthesized Prediction Fallback**:
    - Trong trường hợp toàn bộ mạng AI bên ngoài gặp sự cố mạng hoặc không có API key, bộ sinh thông minh sẽ tự động tổng hợp dữ liệu chuẩn xác dựa trên context của người dùng. Ứng dụng **không bao giờ bị crash hoặc hiển thị màn hình trắng**.
 
+Đã kiểm chứng bằng test: không có Gemini key vẫn trả được micro-steps; lỗi `429` được retry/chuyển model trước khi fallback.
+
 ---
 
 ## 🚀 Hướng Dẫn Cài Đặt & Chạy Dự Án
@@ -663,6 +683,18 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
    ```
    Điền khóa `GEMINI_API_KEY` của bạn vào file `.env`.
 
+  Để bật Firebase Authentication cho local development, tạo `.env.local` (file này đã được git-ignored) với cấu hình Web App lấy từ Firebase Console:
+  ```env
+  VITE_FIREBASE_API_KEY=...
+  VITE_FIREBASE_PROJECT_ID=...
+  VITE_FIREBASE_AUTH_DOMAIN=...
+  VITE_FIREBASE_STORAGE_BUCKET=...
+  VITE_FIREBASE_MESSAGING_SENDER_ID=...
+  VITE_FIREBASE_APP_ID=...
+  VITE_FIREBASE_MEASUREMENT_ID=...
+  ```
+  Sau đó bật Google provider tại Firebase Console → Authentication → Sign-in method. Không commit `.env.local` hoặc key thật.
+
 4. **Khởi chạy môi trường phát triển (Development)**:
    ```bash
    npm run dev
@@ -676,9 +708,16 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 | Tên biến | Bắt buộc | Mô tả |
 | :--- | :---: | :--- |
 | `GEMINI_API_KEY` | Khuyến nghị | Khóa truy cập Google Gemini API (hoặc dùng `VITE_GEMINI_API_KEY`) |
+| `SYMFLOWAGE_M2M_API_KEY` | Bắt buộc cho Agent/MCP | Bearer key xác thực các route `/api/v1/agent/*` và MCP |
 | `APP_URL` | Không | Địa chỉ URL triển khai của ứng dụng (Cloud Run / Vercel) |
 | `DATABASE_URL` | Tùy chọn | URL kết nối PostgreSQL (dùng cho pgvector semantic search) |
-| `VITE_FIREBASE_*` | Tùy chọn | Các cấu hình Firebase Authentication (nếu bật chế độ đăng nhập tài khoản) |
+| `VITE_FIREBASE_API_KEY` | Tùy chọn | Firebase Web API key; cần để khởi tạo Firebase Auth |
+| `VITE_FIREBASE_PROJECT_ID` | Tùy chọn | Firebase project ID |
+| `VITE_FIREBASE_AUTH_DOMAIN` | Tùy chọn | Firebase Auth domain |
+| `VITE_FIREBASE_STORAGE_BUCKET` | Tùy chọn | Firebase Storage bucket |
+| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Tùy chọn | Firebase messaging sender ID |
+| `VITE_FIREBASE_APP_ID` | Tùy chọn | Firebase Web app ID |
+| `VITE_FIREBASE_MEASUREMENT_ID` | Tùy chọn | Google Analytics measurement ID |
 
 ---
 
@@ -712,6 +751,12 @@ Chạy tất cả UI smoke tests:
 npm run test:e2e
 ```
 
+Nếu Playwright chưa có browser hoặc thiếu thư viện hệ thống trong dev container:
+```bash
+npx playwright install chromium
+npx playwright install-deps chromium
+```
+
 Chạy file test cụ thể:
 ```bash
 npx playwright test tests/ui-smoke.spec.ts --reporter=line
@@ -720,9 +765,10 @@ npx playwright test tests/ui-smoke.spec.ts --reporter=line
 ### Kết quả đã xác minh thực tế
 Trong dev container này, các kiểm tra đã được chạy thành công:
 - `npm run lint` ✅
-- `npm run build` ✅
-- `curl http://localhost:3000` trả về `HTTP 200 OK` ✅
-- Playwright UI test: **5 passed (13.5s)** ✅
+- Playwright E2E/API/UI/MCP/fallback: **27 passed** ✅
+- MCP SSE handshake và Circuit Breaker `HALT_EXECUTION` ✅
+- Fallback khi thiếu Gemini key và mô phỏng `429 RESOURCE_EXHAUSTED` ✅
+- `curl http://localhost:3000/openapi.json` trả về `HTTP 200 OK` ✅
 
 ### Ghi chú về môi trường phát triển
 Trong môi trường hiện tại, `npm install` ban đầu gặp xung đột peer dependency giữa `vite` và `esbuild` do version mismatch. Để khởi động dự án đúng cách, đã sử dụng:
