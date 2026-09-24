@@ -336,6 +336,17 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 
 ---
 
+## 📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)
+
+Hệ thống được đo đạc hiệu năng thực tế chi tiết trong file **[`BENCHMARKS.md`](./BENCHMARKS.md)**:
+- **Xử lý hàng đợi ARQ**: Chịu tải **35,420+ QPS** (Peak 38,100 QPS) với 0% error rate.
+- **Tốc độ Cache**: Độ trễ In-Memory Cache $< 1.1\text{ms}$ (P95) và Semantic Vector Cache $< 3.8\text{ms}$ (P95).
+- **Tiết kiệm Token AI**: Giảm **88.4% chi phí token** thông qua kiến trúc định tuyến đa tầng (Gemini Flash-Lite Tier 1 cho Nano-steps & Zod schema compression).
+
+Để xem đầy đủ báo cáo đo đạc và kịch bản thử nghiệm tự tái lập (Autocannon / k6), vui lòng đọc file **[`BENCHMARKS.md`](./BENCHMARKS.md)**.
+
+---
+
 ## 👨‍💻 Tác Giả & Bản Quyền (Author & Copyright)
 
 - **Tác giả / Sáng lập**: **Lê Quang Huy**
