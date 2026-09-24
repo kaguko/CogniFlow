@@ -18,6 +18,7 @@ import {
   buildSmartFallbackDecomposition,
   buildSmartFallbackGoalPlan,
   buildSmartFallbackDecompositionSteps,
+  buildSmartFallbackSemanticDrift,
 } from './src/lib/geminiResilience.ts';
 import {
   rateLimiter,
@@ -344,6 +345,7 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
     try {
       const response = await generateContentWithFallback(ai, {
         contents: prompt,
+        taskComplexity: 'complex', // Uses Gemini Pro for deep Socratic Why-First reasoning
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -364,6 +366,102 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
   } catch (err: any) {
     console.error('Error in /api/socratic-decision:', err);
     return res.json(buildSmartFallbackDecision(req.body?.dilemma || '', req.body?.context));
+  }
+});
+
+/**
+ * POST /api/semantic-drift-analysis
+ * Analyzes tasks against Core Goal using Gemini Flash (Tier 1) to automatically
+ * detect Rabbit Holes (Over-engineering, premature optimization, bike-shedding).
+ */
+app.post('/api/semantic-drift-analysis', createRateLimitMiddleware('ai_simple', 1), async (req: Request, res: Response) => {
+  try {
+    const { coreGoalTitle, coreGoalVision, tasks } = req.body;
+    if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
+      return res.json({
+        overallAlignmentPercent: 100,
+        driftStatus: 'safe',
+        detectedRabbitHoles: [],
+        summaryAnalysis: 'Chưa có task nào để phân tích.',
+      });
+    }
+
+    const cacheKey = `drift_analysis:${(coreGoalTitle || '').toLowerCase()}:${tasks.map((t: any) => t.id || t.title).join(',')}`;
+    const cached = smartCache.get(cacheKey);
+    if (cached.hit && cached.data) {
+      res.setHeader('X-Cache-Status', 'HIT');
+      return res.json(cached.data);
+    }
+    res.setHeader('X-Cache-Status', 'MISS');
+
+    if (!ai) {
+      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, tasks);
+      smartCache.set(cacheKey, fallback, 'simple');
+      return res.json(fallback);
+    }
+
+    const systemInstruction = `
+Bạn là Hệ Thống Phân Tích Ngữ Nghĩa Phát Hiện "Rabbit Hole" (Semantic Drift Engine) dành riêng cho Solo Developer / Indie Hacker.
+Mục tiêu sống còn của Solo Dev: Ship MVP nhanh nhất, kiểm chứng với khách hàng thực tế và tránh lãng phí thời gian.
+
+Các loại Rabbit Hole phổ biến:
+1. "over_engineering": Dựng kiến trúc quá phức tạp (Kubernetes, microservices, CQRS, multi-region) khi chưa có traffic.
+2. "premature_optimization": Tối ưu microsecond latency, custom cache phức tạp khi DB chỉ vài chục dòng.
+3. "bike_shedding": Tốn thời gian chỉnh màu sắc, animation, logo, dark mode thay vì hoàn thiện core CRUD.
+4. "reinventing_wheel": Tự code lại Auth, ORM, Datepicker từ đầu thay vì dùng thư viện chuẩn.
+5. "distraction_task": Task phụ trợ ngoài luồng không ai yêu cầu.
+
+Nhiệm vụ: So sánh từng task trong danh sách với Core Goal:
+- Core Goal: "${coreGoalTitle || 'Xây dựng MVP'}"
+- Vision: "${coreGoalVision || 'Ra mắt sản phẩm có paying user đầu tiên'}"
+
+Đánh giá xem mỗi task có phục vụ Core Goal không và có rơi vào Rabbit Hole không.
+Trả về JSON thuần:
+{
+  "coreGoalTitle": "${coreGoalTitle || 'Core Goal'}",
+  "overallAlignmentPercent": 80,
+  "driftStatus": "safe",
+  "detectedRabbitHoles": [
+    {
+      "taskId": "step_id",
+      "taskTitle": "Tên task",
+      "rabbitHoleType": "over_engineering",
+      "severity": "high",
+      "whyItsATrap": "Giải thích ngắn gọn tại sao đây là bẫy sa đà",
+      "leanAlternative": "Gợi ý cách làm tinh gọn hơn hoặc hoãn lại"
+    }
+  ],
+  "summaryAnalysis": "Nhận xét tổng quan 1-2 câu về mức độ tập trung của Solo Dev"
+}
+Lưu ý: driftStatus: "safe" (>=70%), "caution" (50-69%), "danger_yellow" (<50%).
+`;
+
+    const prompt = `Phân tích danh sách ${tasks.length} task này:\n${JSON.stringify(tasks, null, 2)}`;
+
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        taskComplexity: 'simple', // Flash / Tier 1 lightweight
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          temperature: 0.1,
+        },
+      });
+
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      smartCache.set(cacheKey, parsed, 'simple');
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn('[api/semantic-drift-analysis] Fallback to resilient heuristic:', aiErr?.message || aiErr);
+      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, tasks);
+      smartCache.set(cacheKey, fallback, 'simple');
+      return res.json(fallback);
+    }
+  } catch (err: any) {
+    console.error('Error in /api/semantic-drift-analysis:', err);
+    return res.json(buildSmartFallbackSemanticDrift(req.body?.coreGoalTitle || '', req.body?.tasks || []));
   }
 });
 

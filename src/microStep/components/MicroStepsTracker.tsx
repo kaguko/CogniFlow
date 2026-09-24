@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MicroStep, NanoStep } from '../entities/microStep';
 import { ProjectContext } from '../../projectContext/entities/projectContext';
 import { LongTermGoal } from '../../goal/entities/longTermGoal';
+import { DEFAULT_PRESET_CONTEXTS } from '../../data/defaultPresets';
 import {
   CheckSquare,
   Square,
@@ -29,10 +30,32 @@ import {
   ArrowUpRight,
   X,
   Send,
-  HelpCircle,
+  AlertTriangle,
+  Layers,
+  Cpu,
+  RefreshCw,
+  Trash2,
+  Check,
 } from 'lucide-react';
 import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 import { playCompletionAlert } from '../../utils/audioPlayer';
+
+interface RabbitHoleDetection {
+  taskId: string;
+  taskTitle: string;
+  rabbitHoleType: 'over_engineering' | 'premature_optimization' | 'bike_shedding' | 'reinventing_wheel' | 'distraction_task';
+  severity: 'high' | 'medium' | 'low';
+  whyItsATrap: string;
+  leanAlternative: string;
+}
+
+interface SemanticDriftAnalysisResult {
+  coreGoalTitle: string;
+  overallAlignmentPercent: number;
+  driftStatus: 'safe' | 'caution' | 'danger_yellow';
+  detectedRabbitHoles: RabbitHoleDetection[];
+  summaryAnalysis: string;
+}
 
 interface MicroStepsTrackerProps {
   microSteps: MicroStep[];
@@ -43,6 +66,8 @@ interface MicroStepsTrackerProps {
   currentContext: ProjectContext;
   activeGoal?: LongTermGoal;
   onLinkStepToGoal?: (stepId: string, goalId: string, milestoneId?: string) => void;
+  onSelectPreset?: (preset: ProjectContext) => void;
+  onDeleteStep?: (stepId: string) => void;
 }
 
 type SprintMode = 'nano' | 'micro' | 'pomodoro' | 'break';
@@ -56,6 +81,8 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   currentContext,
   activeGoal,
   onLinkStepToGoal,
+  onSelectPreset,
+  onDeleteStep,
 }) => {
   const [activeStepId, setActiveStepId] = useState<string>(() => {
     const firstPending = microSteps.find((s) => !s.completed);
@@ -63,15 +90,19 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   });
 
   const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
-  const [isDecomposing, setIsDecomposing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  // Quick Decomposer State for Solo Dev (Flash-Lite)
+  // Quick Decomposer State for Solo Dev (Flash-Lite / Tier 1)
   const [quickTaskInput, setQuickTaskInput] = useState('');
   const [isQuickDecomposing, setIsQuickDecomposing] = useState(false);
   const [quickDecomposeNotice, setQuickDecomposeNotice] = useState<string | null>(null);
 
-  // "Challenge Me" (Why-First Socratic) State
+  // Semantic Drift & Rabbit Hole State
+  const [isAnalyzingSemanticDrift, setIsAnalyzingSemanticDrift] = useState(false);
+  const [semanticDriftResult, setSemanticDriftResult] = useState<SemanticDriftAnalysisResult | null>(null);
+  const [showRabbitHoleDetails, setShowRabbitHoleDetails] = useState(true);
+
+  // "Challenge Me" (Why-First Socratic - Gemini Pro Tier 3) State
   const [showChallengeModal, setShowChallengeModal] = useState(false);
   const [challengeDilemma, setChallengeDilemma] = useState('');
   const [isChallenging, setIsChallenging] = useState(false);
@@ -87,13 +118,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   // Pomodoro / Execution Sprint Timer State
   const activeStep = microSteps.find((s) => s.id === activeStepId) || microSteps[0];
   const [sprintMode, setSprintMode] = useState<SprintMode>('micro');
-  const [targetedNanoId, setTargetedNanoId] = useState<string | null>(null);
-  const [targetedNanoText, setTargetedNanoText] = useState<string>('');
   const [totalSprintSeconds, setTotalSprintSeconds] = useState<number>(600);
   const [timeLeft, setTimeLeft] = useState<number>(600);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [soundAlertEnabled, setSoundAlertEnabled] = useState<boolean>(true);
-  const [showCompletionAlert, setShowCompletionAlert] = useState<boolean>(false);
 
   // Track elapsed effort per micro-step (in seconds)
   const [elapsedByStepId, setElapsedByStepId] = useState<Record<string, number>>(() => {
@@ -113,11 +141,36 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     return initial;
   });
 
-  // Calculate active step effort metrics
-  const activeEstimatedSecs = (activeStep?.durationMinutes || 10) * 60;
-  const activeElapsedSecs = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
-  const activeEffortRatio = activeEstimatedSecs > 0 ? Math.round((activeElapsedSecs / activeEstimatedSecs) * 100) : 0;
+  // Pomodoro stats
   const activePomodoros = activeStep ? (pomodoroCountByStepId[activeStep.id] || 0) : 0;
+
+  // Run Semantic Drift Analysis when microSteps change
+  useEffect(() => {
+    const runSemanticDriftCheck = async () => {
+      if (microSteps.length === 0) return;
+      try {
+        setIsAnalyzingSemanticDrift(true);
+        const res = await fetch('/api/semantic-drift-analysis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            coreGoalTitle: activeGoal?.title || currentContext.title,
+            coreGoalVision: activeGoal?.vision || currentContext.description,
+            tasks: microSteps.map((s) => ({ id: s.id, title: s.title })),
+          }),
+        });
+        const data = await res.json();
+        setSemanticDriftResult(data);
+      } catch (err) {
+        console.warn('Error running semantic drift analysis:', err);
+      } finally {
+        setIsAnalyzingSemanticDrift(false);
+      }
+    };
+
+    const timer = setTimeout(runSemanticDriftCheck, 400);
+    return () => clearTimeout(timer);
+  }, [microSteps.length, activeGoal?.id, currentContext.id]);
 
   // When active step changes, sync timer to the selected step
   useEffect(() => {
@@ -140,9 +193,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
         setTimeLeft(5 * 60);
       }
       
-      setTargetedNanoId(null);
-      setTargetedNanoText('');
-      setShowCompletionAlert(false);
       setIsTimerRunning(false);
     }
   }, [activeStepId]);
@@ -150,24 +200,22 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   // Mode switcher handler
   const handleSelectSprintMode = (mode: SprintMode) => {
     setSprintMode(mode);
-    setShowCompletionAlert(false);
-    let seconds = 600;
     if (mode === 'nano') {
-      seconds = 120;
+      setTotalSprintSeconds(120);
+      setTimeLeft(120);
+      setIsTimerRunning(false);
     } else if (mode === 'micro') {
       const stepDurationSecs = (activeStep?.durationMinutes || 10) * 60;
       const stepElapsed = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
-      seconds = Math.max(60, stepDurationSecs - stepElapsed);
+      const seconds = Math.max(60, stepDurationSecs - stepElapsed);
       setTotalSprintSeconds(stepDurationSecs);
       setTimeLeft(seconds);
       setIsTimerRunning(false);
     } else if (mode === 'pomodoro') {
-      seconds = 25 * 60;
       setTotalSprintSeconds(25 * 60);
       setTimeLeft(25 * 60);
       setIsTimerRunning(false);
     } else if (mode === 'break') {
-      seconds = 5 * 60;
       setTotalSprintSeconds(5 * 60);
       setTimeLeft(5 * 60);
       setIsTimerRunning(false);
@@ -205,7 +253,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       if (soundAlertEnabled) {
         playCompletionAlert();
       }
-      setShowCompletionAlert(true);
     }
     return () => {
       if (timer) clearInterval(timer);
@@ -216,18 +263,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     setExpandedStepIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleDecomposeActive = async () => {
-    if (!activeStep) return;
-    try {
-      setIsDecomposing(true);
-      await onDecomposeStep(activeStep.id, currentContext.currentFriction);
-      setExpandedStepIds((prev) => ({ ...prev, [activeStep.id]: true }));
-    } finally {
-      setIsDecomposing(false);
-    }
-  };
-
-  // Quick Decompose Task using Flash-Lite
+  // Quick Decompose Task using Flash / Tier 1
   const handleQuickDecomposeTask = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!quickTaskInput.trim()) return;
@@ -257,11 +293,11 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             goalId: activeGoal?.id,
             goalTitle: activeGoal?.title,
             milestoneId: activeGoal?.milestones[0]?.id,
-            milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Goal Milestone',
+            milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Milestone',
             isAlignedWithGoal: true,
           });
         });
-        setQuickDecomposeNotice(`⚡ Đã phân rã thành công ${data.microSteps.length} vi bước ≤15 phút!`);
+        setQuickDecomposeNotice(`⚡ Đã phân rã thành công ${data.microSteps.length} vi bước ≤15 phút bằng Gemini Flash!`);
         setQuickTaskInput('');
       }
     } catch (err: any) {
@@ -272,7 +308,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     }
   };
 
-  // Run Challenge Me (Socratic Reasoning)
+  // Run Challenge Me (Socratic Why-First - Gemini Pro Tier 3)
   const handleRunChallenge = async (customDilemma?: string) => {
     const targetDilemma =
       customDilemma ||
@@ -302,7 +338,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     }
   };
 
-  // Attach all steps to Active Goal (Fix Drift Score)
+  // Attach all steps to Active Goal
   const handleAlignAllToGoal = () => {
     if (!activeGoal || !onLinkStepToGoal) return;
     microSteps.forEach((step) => {
@@ -343,11 +379,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const sprintProgressPercent =
-    totalSprintSeconds > 0
-      ? Math.min(100, Math.round(((totalSprintSeconds - timeLeft) / totalSprintSeconds) * 100))
-      : 0;
-
   const completedCount = microSteps.filter((s) => s.completed).length;
   const totalCount = microSteps.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -356,30 +387,71 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     .reduce((acc, s) => acc + s.durationMinutes, 0);
 
   // =========================================================================
-  // DRIFT SCORE CALCULATION (Solo Dev Focus Meter)
+  // DRIFT SCORE & SEMANTIC ANALYSIS CALCULATION
   // =========================================================================
-  const alignedStepsCount = microSteps.filter(
-    (s) => s.isAlignedWithGoal || (activeGoal && s.goalId === activeGoal.id)
-  ).length;
-  const coreGoalAlignmentPercent = totalCount > 0 ? Math.round((alignedStepsCount / totalCount) * 100) : 100;
+  const detectedRabbitHoles = semanticDriftResult?.detectedRabbitHoles || [];
+  const rabbitHoleCount = detectedRabbitHoles.length;
   
-  // Drift status determination: < 50% turns Yellow (Màu Vàng)
-  const isDriftWarning = coreGoalAlignmentPercent < 50;
-  const isDriftCaution = coreGoalAlignmentPercent >= 50 && coreGoalAlignmentPercent < 70;
+  // Use semantic alignment if available, otherwise calculate from linked steps
+  const semanticAlignment = semanticDriftResult?.overallAlignmentPercent;
+  const standardAlignedCount = microSteps.filter(
+    (s) => (s.isAlignedWithGoal || (activeGoal && s.goalId === activeGoal.id)) &&
+      !detectedRabbitHoles.some((r) => r.taskId === s.id)
+  ).length;
+  const calculatedPercent = totalCount > 0 ? Math.round((standardAlignedCount / totalCount) * 100) : 100;
+  const coreGoalAlignmentPercent = typeof semanticAlignment === 'number' ? semanticAlignment : calculatedPercent;
 
-  const totalEstimatedMinutes = microSteps.reduce((acc, s) => acc + s.durationMinutes, 0);
+  // Drift status determination: < 50% turns Yellow (Màu Vàng)
+  const isDriftWarning = coreGoalAlignmentPercent < 50 || rabbitHoleCount >= 2;
+  const isDriftCaution = (coreGoalAlignmentPercent >= 50 && coreGoalAlignmentPercent < 75) || rabbitHoleCount === 1;
+
   const totalElapsedSeconds = Object.values(elapsedByStepId).reduce((acc, v) => acc + v, 0);
   const totalElapsedMinutes = Math.floor(totalElapsedSeconds / 60);
   const totalElapsedRemainderSecs = totalElapsedSeconds % 60;
-  const overallEffortPercent =
-    totalEstimatedMinutes > 0
-      ? Math.round((totalElapsedSeconds / (totalEstimatedMinutes * 60)) * 100)
-      : 0;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-20 relative">
+    <div className="space-y-6 max-w-5xl mx-auto pb-24 relative">
       {/* ========================================================================= */}
-      {/* 1. DRIFT SCORE PROGRESS BAR (SOLO DEV CORE GOAL FOCUS) */}
+      {/* 0. SMART PRESETS SWITCHER (FOR SOLO DEVS & INDIE HACKERS) */}
+      {/* ========================================================================= */}
+      <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-300">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            <span>PRESETS THÔNG MINH (SOLO DEVELOPER / INDIE HACKER):</span>
+          </div>
+          <span className="text-[11px] text-slate-400 hidden sm:inline">
+            1-Click nạp toàn bộ mục tiêu & vi bước thực thi
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+          {DEFAULT_PRESET_CONTEXTS.map((preset) => {
+            const isSelected = currentContext.id === preset.id;
+            return (
+              <button
+                key={preset.id}
+                onClick={() => onSelectPreset && onSelectPreset(preset)}
+                className={`p-2 rounded-lg text-left border transition-all ${
+                  isSelected
+                    ? 'bg-indigo-950/80 border-indigo-500 shadow-md ring-1 ring-indigo-500/40 text-white'
+                    : 'bg-slate-950/60 border-slate-800/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <div className="text-[11px] font-bold line-clamp-1">
+                  {preset.title}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5 line-clamp-1">
+                  {preset.deadlineHorizon}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 1. DRIFT SCORE + SEMANTIC RABBIT HOLE DETECTOR */}
       {/* ========================================================================= */}
       <div className={`p-4 rounded-xl border transition-all ${
         isDriftWarning
@@ -397,11 +469,18 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               Thanh Tiến Độ Phục Vụ Mục Tiêu Chính (Core Goal Alignment):
             </span>
             <span className="text-xs font-mono font-bold text-slate-200">
-              {activeGoal ? activeGoal.title : 'Chưa chọn Core Goal'}
+              {activeGoal ? activeGoal.title : currentContext.title}
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            {isAnalyzingSemanticDrift && (
+              <span className="text-[10px] font-mono text-indigo-400 flex items-center gap-1">
+                <RefreshCw className="w-3 h-3 animate-spin" />
+                <span>Phân tích ngữ nghĩa...</span>
+              </span>
+            )}
+
             <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
               isDriftWarning
                 ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
@@ -416,7 +495,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               <button
                 onClick={handleAlignAllToGoal}
                 className="text-[11px] font-semibold px-2.5 py-1 rounded bg-yellow-500 hover:bg-yellow-400 text-black font-mono transition-colors shadow-md"
-                title="Gắn toàn bộ các task hiện tại vào Core Goal"
               >
                 ⚡ Gắn tất cả vào Core Goal
               </button>
@@ -434,39 +512,82 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 ? 'bg-amber-500'
                 : 'bg-emerald-500'
             }`}
-            style={{ width: `${coreGoalAlignmentPercent}%` }}
+            style={{ width: `${Math.max(5, coreGoalAlignmentPercent)}%` }}
           />
         </div>
 
         {/* Status description */}
-        <div className="flex justify-between items-center mt-2 text-[11px]">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mt-2.5 gap-2 text-[11px]">
           <span className={`${
             isDriftWarning ? 'text-yellow-300 font-semibold' : isDriftCaution ? 'text-amber-300' : 'text-slate-400'
           }`}>
             {isDriftWarning
-              ? '⚠️ Cảnh báo trôi dạt mục tiêu (Drift Alert): Dưới 50% vi bước phục vụ Core Goal! Hãy tập trung vào việc sống còn.'
+              ? '⚠️ Cảnh báo trôi dạt mục tiêu (Drift Alert): Dưới 50% vi bước phục vụ Core Goal hoặc có bẫy Rabbit Hole!'
               : isDriftCaution
-              ? '⚡ Cảnh báo phân tâm nhẹ: Một vài vi bước phụ chưa liên kết trực tiếp với mục tiêu chính.'
-              : '✅ Tuyệt vời! Bạn đang tập trung hoàn toàn vào việc tạo ra giá trị then chốt cho sản phẩm.'}
+              ? '⚡ Cảnh báo phân tâm nhẹ: Một vài vi bước phụ chưa tối ưu cho việc ship sản phẩm.'
+              : '✅ Tuyệt vời! Bạn đang tập trung hoàn toàn vào việc tạo ra giá trị then chốt cho MVP.'}
           </span>
-          <span className="text-slate-500 font-mono">
-            {alignedStepsCount}/{totalCount} vi bước
-          </span>
+          <div className="flex items-center gap-3 text-slate-500 font-mono text-[10px]">
+            <span>Model: Flash-Lite (Tier 1)</span>
+            <span>·</span>
+            <span>{standardAlignedCount}/{totalCount} vi bước thẳng hàng</span>
+          </div>
         </div>
+
+        {/* DETECTED RABBIT HOLES ALERT PANEL */}
+        {detectedRabbitHoles.length > 0 && (
+          <div className="mt-3 p-3 rounded-lg bg-yellow-950/60 border border-yellow-500/60 space-y-2">
+            <div className="flex items-center justify-between text-yellow-300 font-bold text-xs">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 animate-bounce" />
+                <span>PHÁT HIỆN {detectedRabbitHoles.length} BẪY "RABBIT HOLE" (SA ĐÀ / OVER-ENGINEERING):</span>
+              </div>
+              <button
+                onClick={() => setShowRabbitHoleDetails(!showRabbitHoleDetails)}
+                className="text-[11px] underline text-yellow-400 hover:text-yellow-200"
+              >
+                {showRabbitHoleDetails ? 'Thu gọn' : 'Xem chi tiết'}
+              </button>
+            </div>
+
+            {showRabbitHoleDetails && (
+              <div className="space-y-2 pt-1 text-xs">
+                {detectedRabbitHoles.map((rh, i) => (
+                  <div key={i} className="p-2.5 rounded bg-slate-950/80 border border-yellow-500/30 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-white">🕳️ "{rh.taskTitle}"</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 border border-yellow-700/60">
+                        {rh.rabbitHoleType}
+                      </span>
+                    </div>
+                    <div className="text-yellow-200/90 text-[11px]">
+                      <strong>Vì sao là bẫy:</strong> {rh.whyItsATrap}
+                    </div>
+                    <div className="text-emerald-300 text-[11px]">
+                      <strong>Giải pháp tinh gọn:</strong> {rh.leanAlternative}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. INSTANT TASK DECOMPOSER (FLASH-LITE POWERED FOR SOLO DEVS) */}
+      {/* 2. INSTANT TASK DECOMPOSER (GEMINI FLASH / TIER 1 POWERED) */}
       {/* ========================================================================= */}
       <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/40 shadow-lg space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
             <Zap className="w-4 h-4 text-indigo-400 animate-pulse" />
-            <span>CHIA NHỎ TASK SIÊU TỐC (≤ 15 PHÚT · FLASH-LITE)</span>
+            <span>CHIA NHỎ TASK SIÊU TỐC (≤ 15 PHÚT · GEMINI FLASH)</span>
           </div>
-          <span className="text-[11px] text-slate-400 font-mono">
-            6 nguyên lý lập trình & tiêu chuẩn TDD/Fail-Fast
-          </span>
+          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+            <span className="bg-indigo-950 text-indigo-300 px-2 py-0.5 rounded border border-indigo-800">
+              ⚡ Flash Token Tier (88% Tiết Kiệm)
+            </span>
+          </div>
         </div>
 
         <form onSubmit={handleQuickDecomposeTask} className="flex gap-2">
@@ -474,7 +595,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             type="text"
             value={quickTaskInput}
             onChange={(e) => setQuickTaskInput(e.target.value)}
-            placeholder="Nhập task bất kỳ (VD: Tích hợp Stripe Checkout, Fix lỗi crash khi kết nối DB, Setup Auth)..."
+            placeholder="Nhập task bất kỳ (VD: Tích hợp Stripe Checkout, Fix rò rỉ kết nối DB, Setup Auth)..."
             className="flex-1 px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
           />
           <button
@@ -515,7 +636,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             <span className="text-indigo-400 font-semibold uppercase tracking-wider">
               Solo Dev Focus Station
             </span>
-            <span aria-hidden="true">·</span>
+            <span>·</span>
             <span>Pomodoro & Vi Bước ≤15 Phút</span>
           </div>
           <h2 className="text-base font-bold text-white tracking-tight">
@@ -537,7 +658,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             <div className="text-[11px] text-slate-400">Thực tế đã dùng</div>
             <div className="text-base font-bold font-mono text-amber-400 tabular-nums">
               {totalElapsedMinutes}m {totalElapsedRemainderSecs > 0 ? `${totalElapsedRemainderSecs}s` : ''}
-              <span className="text-[10px] text-slate-500 font-normal ml-1">({overallEffortPercent}%)</span>
             </div>
           </div>
 
@@ -550,11 +670,11 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
         </div>
       </div>
 
-      {/* ACTIVE STEP SPOTLIGHT (Trọng tâm hiện tại) */}
+      {/* ACTIVE STEP SPOTLIGHT */}
       {activeStep && (
         <div className="p-5 rounded-xl bg-slate-900 border-2 border-indigo-600/70 shadow-lg space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/60">
                 BƯỚC {activeStep.order} / {totalCount}
               </span>
@@ -574,10 +694,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   <span>{activePomodoros} 🍅 Pomodoro</span>
                 </span>
               )}
-              <span className="text-xs text-slate-400 flex items-center gap-1">
-                <Timer className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Pomodoro Station</span>
-              </span>
             </div>
           </div>
 
@@ -607,7 +723,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 className="px-2 py-1 rounded bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800/60 text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors"
               >
                 <Link2 className="w-3 h-3" />
-                <span>Gắn vào {activeGoal.title.slice(0, 16)}...</span>
+                <span>Gắn vào Core Goal</span>
               </button>
             )}
           </div>
@@ -786,6 +902,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           {microSteps.map((step) => {
             const isCurrentActive = step.id === activeStepId;
             const isExpanded = !!expandedStepIds[step.id];
+            const isRabbitHole = detectedRabbitHoles.find((r) => r.taskId === step.id);
 
             return (
               <div
@@ -793,6 +910,8 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 className={`p-3.5 rounded-xl border transition-all ${
                   isCurrentActive
                     ? 'bg-slate-900 border-indigo-500 shadow-md'
+                    : isRabbitHole
+                    ? 'bg-yellow-950/20 border-yellow-500/40'
                     : step.completed
                     ? 'bg-slate-950/60 border-slate-900 opacity-60'
                     : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
@@ -832,6 +951,12 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                         <span className="text-[10px] font-medium text-amber-300/80">
                           {step.programmerPrinciple}
                         </span>
+
+                        {isRabbitHole && (
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-yellow-900/70 text-yellow-300 border border-yellow-600/50 flex items-center gap-1">
+                            <span>🕳️ Bẫy sa đà: {isRabbitHole.rabbitHoleType}</span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-[11px] text-slate-400 mt-1 line-clamp-1 font-mono">
@@ -861,6 +986,11 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       <span className="text-slate-400 font-semibold">Mẹo gỡ rối: </span>
                       <span className="text-slate-300">{step.unblockTip}</span>
                     </div>
+                    {isRabbitHole && (
+                      <div className="mt-2 p-2 bg-yellow-950/40 rounded border border-yellow-500/30 text-yellow-300 text-[11px]">
+                        <strong>Cảnh báo Rabbit Hole:</strong> {isRabbitHole.whyItsATrap}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -870,7 +1000,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. FLOATING & INLINE "CHALLENGE ME" (WHY-FIRST SOCRATIC BUTTON) */}
+      {/* 5. FLOATING "CHALLENGE ME" (GEMINI PRO TIER 3 WHY-FIRST SOCRATIC) */}
       {/* ========================================================================= */}
       <button
         onClick={() => {
@@ -880,10 +1010,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           }
         }}
         className="fixed bottom-6 right-6 z-40 px-4 py-3 rounded-full bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs flex items-center gap-2.5 shadow-2xl shadow-rose-600/40 border border-amber-400/30 group hover:scale-105 transition-all"
-        title="Bấm để AI đóng vai trò Co-founder phản biện câu hỏi Why-First"
+        title="Bấm để AI Gemini Pro đóng vai trò Co-founder phản biện Why-First"
       >
         <ShieldQuestion className="w-4 h-4 text-amber-200 group-hover:rotate-12 transition-transform" />
-        <span>🎯 Challenge me (Thách thức tôi)</span>
+        <span>🎯 Challenge me (Gemini Pro)</span>
       </button>
 
       {/* Socratic Challenge Modal */}
@@ -893,7 +1023,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
                 <Lightbulb className="w-5 h-5" />
-                <span>CỐ VẤN PHẢN BIỆN ĐỘC LẬP (WHY-FIRST SPARRED PARTNER)</span>
+                <span>CỐ VẤN PHẢN BIỆN ĐỘC LẬP (GEMINI PRO · WHY-FIRST)</span>
               </div>
               <button
                 onClick={() => setShowChallengeModal(false)}
@@ -903,8 +1033,13 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               </button>
             </div>
 
+            <div className="flex items-center gap-2 p-2 rounded bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-300 font-mono">
+              <Cpu className="w-3.5 h-3.5 text-amber-400" />
+              <span>Định tuyến riêng biệt tới Gemini Pro: Suy luận đa chiều & bóc tách bẫy kỹ thuật.</span>
+            </div>
+
             <p className="text-xs text-slate-300 leading-relaxed">
-              Bạn đang làm một mình và cảm thấy bế tắc hoặc nghi ngờ về tính cấp thiết của công việc hiện tại? Hãy để AI đóng vai trò <strong>Virtual Co-founder</strong> chất vấn logic của bạn:
+              Bạn đang làm một mình và cảm thấy bế tắc hoặc nghi ngờ về tính cấp thiết của công việc hiện tại? Hãy để Virtual Co-founder chất vấn logic của bạn:
             </p>
 
             {/* Question Quick Chips */}
@@ -1087,7 +1222,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold text-white shadow-md"
+                  className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold"
                 >
                   Tạo Vi Bước
                 </button>

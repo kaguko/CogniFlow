@@ -306,6 +306,7 @@ export default function App() {
               currentContext={currentContext}
               activeGoal={activeGoal}
               onLinkStepToGoal={handleLinkStepToGoal}
+              onSelectPreset={handleSelectPreset}
             />
           )}
 

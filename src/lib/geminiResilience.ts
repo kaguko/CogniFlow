@@ -483,3 +483,51 @@ export function buildSmartFallbackDecompositionSteps(taskTitle: string) {
     leanAdvice: 'Tập trung hoàn thành 100% Happy Path trước khi nghĩ tới các tính năng phụ.',
   };
 }
+
+export function buildSmartFallbackSemanticDrift(coreGoalTitle: string, tasks: Array<{ id: string; title: string }>) {
+  const rabbitHoleKeywords = [
+    { kw: 'kubernetes', type: 'over_engineering', reason: 'Dựng Kubernetes cho MVP khi chưa có traffic lớn là over-engineering.' },
+    { kw: 'k8s', type: 'over_engineering', reason: 'Dựng k8s khi chưa có user dễ gây lãng phí thì giờ cấu hình YAML.' },
+    { kw: 'microservice', type: 'over_engineering', reason: 'Tách Microservices quá sớm làm tăng độ phức tạp mạng và latency.' },
+    { kw: 'dark mode', type: 'bike_shedding', reason: 'Chỉnh sửa giao diện chi tiết hoặc dark mode trước khi có core CRUD.' },
+    { kw: 'theme', type: 'bike_shedding', reason: 'Tốn thời gian chỉnh theme và màu sắc thay vì hoàn thiện logic tính năng.' },
+    { kw: 'logo', type: 'bike_shedding', reason: 'Vẽ logo nhiều ngày không giúp kiểm chứng nhu cầu khách hàng.' },
+    { kw: 'tối ưu microsecond', type: 'premature_optimization', reason: 'Tối ưu microsecond khi cơ sở dữ liệu chỉ có vài chục dòng.' },
+    { kw: 'tự viết orm', type: 'reinventing_wheel', reason: 'Tự viết ORM hoặc framework riêng thay vì dùng thư viện chuẩn.' },
+    { kw: 'custom auth framework', type: 'reinventing_wheel', reason: 'Tự viết lại cơ chế Auth phức tạp thay vì dùng giải pháp có sẵn.' },
+  ];
+
+  const detectedRabbitHoles: any[] = [];
+  let alignedCount = 0;
+
+  tasks.forEach((t) => {
+    const lower = t.title.toLowerCase();
+    const matched = rabbitHoleKeywords.find((k) => lower.includes(k.kw));
+    if (matched) {
+      detectedRabbitHoles.push({
+        taskId: t.id,
+        taskTitle: t.title,
+        rabbitHoleType: matched.type,
+        severity: 'high',
+        whyItsATrap: matched.reason,
+        leanAlternative: 'Dùng giải pháp tối giản nhất hoặc hoãn lại sau khi ra mắt MVP.',
+      });
+    } else {
+      alignedCount++;
+    }
+  });
+
+  const total = Math.max(1, tasks.length);
+  const overallAlignmentPercent = Math.round((alignedCount / total) * 100);
+
+  return {
+    coreGoalTitle: coreGoalTitle || 'Core Goal',
+    overallAlignmentPercent,
+    driftStatus: overallAlignmentPercent < 50 ? 'danger_yellow' : overallAlignmentPercent < 75 ? 'caution' : 'safe',
+    detectedRabbitHoles,
+    summaryAnalysis: detectedRabbitHoles.length > 0
+      ? `Phát hiện ${detectedRabbitHoles.length} tác vụ có dấu hiệu sa đà vào Rabbit Hole (Over-engineering hoặc Bike-shedding).`
+      : 'Tất cả các tác vụ đang bám sát mục tiêu cốt lõi.',
+  };
+}
+
