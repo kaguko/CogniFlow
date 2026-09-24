@@ -372,12 +372,40 @@ SymFlowAge hỗ trợ chuẩn **Model Context Protocol (MCP)** qua hai giao th�
 1. **Direct HTTP JSON-RPC** (`POST /api/mcp`)
 2. **Server-Sent Events (SSE)** (`GET /api/mcp/sse` & `POST /api/mcp/messages`)
 
-#### Các MCP Tools có sẵn:
-* `symflowage_decompose_task`: Phân rã mục tiêu thành các vi bước $\le 15$ phút.
-* `symflowage_semantic_drift_analysis`: Quét phát hiện bẫy kỹ thuật và trôi dạt mục tiêu.
-* `symflowage_socratic_decision`: Phản biện Why-First kiến trúc theo Nguyên lý gốc.
-* `symflowage_predict_timelines`: Dự báo 3 kịch bản tương lai (Optimal, Drift, Crash).
-* `symflowage_guardrail_drift_check`: Rào chắn nhanh trả về kết quả ALLOW / WARN / BLOCK.
+### 🚨 Real-time Guardrail Circuit Breaker (Webhook & SSE Alert)
+
+SymFlowAge trang bị cơ chế **Circuit Breaker tự động ngắt luồng Agent** khi phát hiện sa đà nghiêm trọng:
+
+* **Điều kiện ngắt mạch**:
+  1. Drift Score $\ge 65\%$ (hoặc ngưỡng `maxDriftThreshold` tùy chỉnh).
+  2. Quyết định Guardrail trả về `BLOCK` do bẫy kỹ thuật nghiêm trọng (*reinventing_wheel*, *over_engineering*).
+  3. Lỗi sa đà liên tiếp $\ge 3$ lần.
+
+* **Outbound Webhook (`SYMFLOWAGE_WEBHOOK_URL`)**:
+  Bắn HTTP POST JSON Alert tức thì tới Slack, Discord, PagerDuty khi Circuit Breaker bật:
+  ```json
+  {
+    "event": "CIRCUIT_BREAKER_TRIGGERED",
+    "timestamp": "2026-09-24T09:17:00Z",
+    "agentId": "agent_cline_vscode",
+    "requestId": "req_9c8b7a6f",
+    "severity": "CRITICAL",
+    "driftMetrics": {
+      "driftScore": 72.5,
+      "detectedPatterns": ["reinventing_wheel", "premature_optimization"],
+      "recommendedAction": "Gỡ rối tác vụ và quay lại Core Goal: Launch MVP"
+    },
+    "circuitStatus": "OPEN"
+  }
+  ```
+
+* **SSE Alert Stream (`event: guardrail_alert`)**:
+  Phát trực tiếp sự kiện `HALT_EXECUTION` qua kết nối SSE `/api/mcp/sse` giúp Cursor, Windsurf, Claude Desktop lập tức ngắt việc sinh code lãng phí token.
+
+#### Các MCP Tools bổ sung:
+* `symflowage_report_outcome`: Báo cáo kết quả thực thi thực tế (SUCCESS, DRIFT, CRASH) tối ưu độ chính xác AI.
+* `symflowage_configure_circuit_breaker`: Thiết lập ngưỡng Drift Score và cấu hình URL Outbound Webhook.
+* `symflowage_subscribe_alerts`: Lắng nghe trạng thái ngắt mạch thời gian thực.
 
 #### Cấu hình cho Cursor / Windsurf / Claude Desktop (`claude_desktop_config.json`):
 ```json

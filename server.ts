@@ -16,6 +16,11 @@ import {
 import { insertPredictionOutcome, insertPredictionSnapshot, getPredictionById } from './src/db/predictions.ts';
 import { assertThresholds, runBacktest } from './src/lib/backtest.ts';
 import {
+  evaluateAndTriggerCircuitBreaker,
+  getCircuitBreakerConfig,
+  updateCircuitBreakerConfig,
+} from './src/lib/circuitBreaker.ts';
+import {
   generateContentWithFallback,
   buildSmartFallbackPrediction,
   buildSmartFallbackDecision,
@@ -155,15 +160,34 @@ function getMeaningfulGoalTokens(value: string) {
 
 function addSemanticGuardrailMetadata(result: any, threshold = 40) {
   const driftScore = Math.min(100, Math.max(0, 100 - Number(result?.overallAlignmentPercent ?? 100)));
-  const decision = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+  const baseDecision = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+  const requestId = result?.requestId || `req_${randomUUID().slice(0, 8)}`;
+  const agentId = result?.agentId || 'agent_client';
+
+  const circuitEval = evaluateAndTriggerCircuitBreaker({
+    agentId,
+    requestId,
+    driftScore,
+    decision: baseDecision,
+    detectedPatterns: (result?.detectedRabbitHoles || []).map((rh: any) => rh.type || rh.taskTitle),
+    recommendedAction: result?.recommendations?.[0] || 'Gỡ rối tác vụ và quay lại Core Goal',
+  });
+
+  const finalDecision = circuitEval.triggered ? 'BLOCK' : baseDecision;
+
   return {
     ...result,
     contractVersion: 'semantic-drift.v1',
-    requestId: randomUUID(),
+    requestId,
     driftScore,
     guardrailThreshold: threshold,
-    guardrailStatus: decision,
-    decision,
+    guardrailStatus: finalDecision,
+    decision: finalDecision,
+    circuitBreaker: {
+      triggered: circuitEval.triggered,
+      circuitStatus: circuitEval.circuitStatus,
+      reason: circuitEval.reason,
+    },
   };
 }
 
@@ -718,6 +742,30 @@ const handleGetAccuracyScore = async (req: Request, res: Response) => {
 
 app.get('/api/accuracy-score', handleGetAccuracyScore);
 app.get('/api/v1/agent/accuracy-score', handleGetAccuracyScore);
+
+/**
+ * GET & POST /api/circuit-breaker/config & /api/v1/agent/circuit-breaker/config
+ * Circuit Breaker configuration endpoints for setting drift thresholds & outbound webhook URL
+ */
+const handleGetCircuitBreakerConfig = (_req: Request, res: Response) => {
+  return res.json(getCircuitBreakerConfig());
+};
+
+const handleUpdateCircuitBreakerConfig = (req: Request, res: Response) => {
+  const body = req.body || {};
+  const updated = updateCircuitBreakerConfig({
+    maxDriftThreshold: typeof body.maxDriftThreshold === 'number' ? body.maxDriftThreshold : undefined,
+    consecutiveFailureThreshold: typeof body.consecutiveFailureThreshold === 'number' ? body.consecutiveFailureThreshold : undefined,
+    enableWebhook: typeof body.enableWebhook === 'boolean' ? body.enableWebhook : undefined,
+    webhookUrl: typeof body.webhookUrl === 'string' ? body.webhookUrl : undefined,
+  });
+  return res.json({ success: true, config: updated });
+};
+
+app.get('/api/circuit-breaker/config', handleGetCircuitBreakerConfig);
+app.get('/api/v1/agent/circuit-breaker/config', handleGetCircuitBreakerConfig);
+app.post('/api/circuit-breaker/config', handleUpdateCircuitBreakerConfig);
+app.post('/api/v1/agent/circuit-breaker/config', requireAgentAuth, handleUpdateCircuitBreakerConfig);
 
 app.get('/api/admin/backtest', async (req: Request, res: Response) => {
   if (!process.env.ADMIN_TOKEN || req.header('x-admin-token') !== process.env.ADMIN_TOKEN) {

@@ -17,6 +17,11 @@ import {
 import { decomposeOffline } from '../services/offlineDecomposer.ts';
 import { insertPredictionOutcome, insertPredictionSnapshot } from '../db/predictions.ts';
 import { runBacktest } from '../lib/backtest.ts';
+import {
+  getCircuitBreakerConfig,
+  updateCircuitBreakerConfig,
+  registerSseAlertSubscriber,
+} from '../lib/circuitBreaker.ts';
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -244,6 +249,41 @@ export function createSymFlowAgeMcpServer() {
                 description: 'Number of past days to evaluate (default: 30).',
               },
             },
+          },
+        },
+        {
+          name: 'symflowage_configure_circuit_breaker',
+          description:
+            'Thiết lập ngưỡng Drift Score và bật/tắt cơ chế ngắt mạch tự động (Circuit Breaker & Outbound Webhook) cho Agent.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              maxDriftThreshold: {
+                type: 'number',
+                description: 'Ngưỡng Drift Score (1-100) kích hoạt Circuit Breaker (Default: 65)',
+              },
+              enableWebhook: {
+                type: 'boolean',
+                description: 'Bật/tắt gửi thông báo Outbound Webhook',
+              },
+              webhookUrl: {
+                type: 'string',
+                description: 'URL nhận webhook cảnh báo (Slack, Discord, PagerDuty, Custom)',
+              },
+              consecutiveFailureThreshold: {
+                type: 'number',
+                description: 'Số lần sa đà/BLOCK liên tiếp để ngắt luồng (Default: 3)',
+              },
+            },
+          },
+        },
+        {
+          name: 'symflowage_subscribe_alerts',
+          description:
+            'Đăng ký lắng nghe cảnh báo ngắt mạch thời gian thực hoặc kiểm tra trạng thái Circuit Breaker hiện tại.',
+          inputSchema: {
+            type: 'object',
+            properties: {},
           },
         },
       ],
@@ -702,6 +742,43 @@ Bắt buộc trả về đúng JSON:
         };
       }
 
+      if (name === 'symflowage_configure_circuit_breaker') {
+        const newConfig = updateCircuitBreakerConfig({
+          maxDriftThreshold: typeof args.maxDriftThreshold === 'number' ? args.maxDriftThreshold : undefined,
+          enableWebhook: typeof args.enableWebhook === 'boolean' ? args.enableWebhook : undefined,
+          webhookUrl: typeof args.webhookUrl === 'string' ? args.webhookUrl : undefined,
+          consecutiveFailureThreshold: typeof args.consecutiveFailureThreshold === 'number' ? args.consecutiveFailureThreshold : undefined,
+        });
+
+        const response = {
+          success: true,
+          status: 'CONFIGURED',
+          message: 'Cấu hình Circuit Breaker đã được cập nhật thành công.',
+          circuitBreakerConfig: newConfig,
+        };
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+        };
+      }
+
+      if (name === 'symflowage_subscribe_alerts') {
+        const config = getCircuitBreakerConfig();
+        const response = {
+          success: true,
+          status: 'SUBSCRIBED',
+          sseChannel: '/api/mcp/sse',
+          circuitBreakerConfig: config,
+          activeTransportsCount: sseTransports.size,
+          instructions:
+            'Lắng nghe các sự kiện guardrail_alert qua kênh SSE /api/mcp/sse. Khi Circuit Breaker kích hoạt (Drift >= threshold hoặc BLOCK), hệ thống sẽ tự động phát sự kiện HALT_EXECUTION ngắt luồng Agent.',
+        };
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+        };
+      }
+
       throw new Error(`Unknown MCP Tool: ${name}`);
     } catch (err: any) {
       return {
@@ -879,9 +956,18 @@ export function mountMcpRoutes(app: any) {
       const sessionId = transport.sessionId;
       sseTransports.set(sessionId, transport);
 
+      const unregisterSseAlert = registerSseAlertSubscriber((alertData) => {
+        try {
+          res.write(`event: guardrail_alert\ndata: ${JSON.stringify(alertData)}\n\n`);
+        } catch (err) {
+          // SSE stream closed
+        }
+      });
+
       const server = createSymFlowAgeMcpServer();
 
       res.on('close', () => {
+        unregisterSseAlert();
         sseTransports.delete(sessionId);
       });
 
