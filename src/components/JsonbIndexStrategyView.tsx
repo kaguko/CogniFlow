@@ -29,6 +29,9 @@ import {
   Clock,
   ShieldAlert,
   ArrowDown,
+  Workflow,
+  Sparkles,
+  Terminal,
 } from 'lucide-react';
 import { analyzeJsonbQueryPlan } from '../utils/jsonbAnalyzer';
 import {
@@ -39,10 +42,15 @@ import {
   tombstoneCacheEngine,
   SimulationResult,
 } from '../utils/cacheAsideTombstoneEngine';
+import {
+  TASK_QUEUE_MATRIX,
+  arqEngine,
+  ArqJobState,
+} from '../utils/taskQueueMatrixEngine';
 
 export const JsonbIndexStrategyView: React.FC = () => {
-  const [mainSection, setMainSection] = useState<'indexes' | 'locks' | 'toast' | 'tombstone'>(
-    'tombstone'
+  const [mainSection, setMainSection] = useState<'arq_matrix' | 'tombstone' | 'indexes' | 'locks' | 'toast'>(
+    'arq_matrix'
   );
 
   // Tab 1: Index Simulator States
@@ -53,7 +61,7 @@ export const JsonbIndexStrategyView: React.FC = () => {
   const [sampleKey, setSampleKey] = useState('priority');
   const [sampleValue, setSampleValue] = useState('high');
   const [hasPartialCondition, setHasPartialCondition] = useState(false);
-  const [activeCodeTab, setActiveCodeTab] = useState<'sql' | 'drizzle' | 'redis_lua'>('sql');
+  const [activeCodeTab, setActiveCodeTab] = useState<'arq_python' | 'redis_lua' | 'sql' | 'drizzle'>('arq_python');
 
   // Tab 2: Lock Contention States
   const [lockMode, setLockMode] = useState<'FOR UPDATE' | 'FOR NO KEY UPDATE'>('FOR NO KEY UPDATE');
@@ -71,11 +79,29 @@ export const JsonbIndexStrategyView: React.FC = () => {
     tombstoneCacheEngine.simulateRaceCondition(true)
   );
 
+  // Tab 5: ARQ Engine Interactive Simulation
+  const [arqJobs, setArqJobs] = useState<ArqJobState[]>([]);
+  const [isEnqueueing, setIsEnqueueing] = useState<boolean>(false);
+  const [selectedTaskType, setSelectedTaskType] = useState<'send_webhook' | 'batch_embedding' | 'send_email'>(
+    'send_webhook'
+  );
+
   const [copiedType, setCopiedType] = useState<string | null>(null);
 
   const handleRunTombstoneSimulation = (useTombstone: boolean) => {
     setWithTombstone(useTombstone);
     setSimulationResult(tombstoneCacheEngine.simulateRaceCondition(useTombstone));
+  };
+
+  const handleEnqueueArqJob = async () => {
+    setIsEnqueueing(true);
+    const newJob = await arqEngine.enqueue(selectedTaskType, {
+      payloadSizeKb: Math.floor(Math.random() * 50) + 5,
+      targetEndpoint: 'https://api.symflowage.internal/v1/webhook',
+      priority: 'high',
+    });
+    setArqJobs((prev) => [newJob, ...prev.slice(0, 7)]);
+    setTimeout(() => setIsEnqueueing(false), 300);
   };
 
   const analysis = analyzeJsonbQueryPlan(
@@ -95,81 +121,46 @@ export const JsonbIndexStrategyView: React.FC = () => {
     setTimeout(() => setCopiedType(null), 2000);
   };
 
-  const sqlDDL = `-- ==========================================
--- 1. CHIẾN LƯỢC CHỈ MỤC JSONB (POSTGRESQL)
--- ==========================================
--- GIN (jsonb_ops): Hỗ trợ @>, ?, ?|, ?&
-CREATE INDEX notes_metadata_gin_ops_idx ON notes USING gin (metadata);
+  const arqPythonCode = `# =========================================================================
+# ARQ (Async Redis Task Queue) - Chuẩn Production High-Concurrency I/O
+# =========================================================================
+# pip install arq redis uvloop
 
--- GIN (jsonb_path_ops): Chỉ hỗ trợ @> (Tiết kiệm 70% dung lượng)
-CREATE INDEX notes_metadata_gin_path_idx ON notes USING gin (metadata jsonb_path_ops);
+import asyncio
+from typing import Any
+from arq import create_pool
+from arq.connections import RedisSettings
 
--- Expression B-Tree: Tối ưu cho toán tử ->> trên key cố định (=, <, >, BETWEEN, IN)
-CREATE INDEX notes_metadata_priority_btree_idx ON notes ((metadata->>'priority'));
+# 1. Định nghĩa các tác vụ Async I/O Native
+async def send_webhook(ctx: dict, url: str, payload: dict) -> dict:
+    # Native Async Event Loop: Xử lý non-blocking 35,000+ QPS
+    # Không tốn RAM threadpool hay multi-process nặng nề
+    async with ctx['session'].post(url, json=payload) as resp:
+        return {'status': resp.status, 'url': url}
 
--- Partial Index: Siêu nhẹ cho bản ghi active
-CREATE INDEX notes_active_metadata_partial_idx ON notes USING gin (metadata jsonb_path_ops) 
-WHERE is_active = true;
+async def generate_batch_embedding(ctx: dict, text_chunk: str) -> list[float]:
+    # Async I/O LLM Pipeline
+    await asyncio.sleep(0.02) # Async I/O call
+    return [0.05] * 768
 
--- ==========================================
--- 2. TRÁNH THUẾ TOAST (STORED GENERATED COLUMNS)
--- ==========================================
-ALTER TABLE notes 
-ADD COLUMN extracted_priority text 
-GENERATED ALWAYS AS (metadata->>'priority') STORED;
+# 2. Cấu hình Worker Settings
+async def startup(ctx: dict):
+    import aiohttp
+    ctx['session'] = aiohttp.ClientSession()
 
-CREATE INDEX notes_generated_priority_idx ON notes (extracted_priority);
+async def shutdown(ctx: dict):
+    await ctx['session'].close()
 
--- ==========================================
--- 3. CHỐNG WRITE BOTTLENECK & DEADLOCK TRONG TASK QUEUE
--- ==========================================
-SELECT * FROM task_queue 
-WHERE status = 'pending' 
-ORDER BY id ASC 
-LIMIT 1 
-FOR NO KEY UPDATE SKIP LOCKED;`;
+class WorkerSettings:
+    functions = [send_webhook, generate_batch_embedding]
+    on_startup = startup
+    on_shutdown = shutdown
+    redis_settings = RedisSettings(host='127.0.0.1', port=6379)
+    max_jobs = 1000 # Tải cực lớn trên 1 process đơn
 
-  const drizzleSchema = `import { pgTable, serial, text, boolean, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
-
-export const notes = pgTable('notes', {
-  id: serial('id').primaryKey(),
-  userUid: text('user_uid').notNull(),
-  title: text('title').notNull(),
-  metadata: jsonb('metadata').default({}),
-  
-  // Tránh Thuế TOAST: Trích xuất trường hay query ra cột vật lý
-  extractedPriority: text('extracted_priority').generatedAlwaysAs(
-    sql\`metadata->>'priority'\`
-  ),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at').defaultNow(),
-}, (table) => ({
-  // GIN (jsonb_path_ops)
-  ginPathOpsIdx: index('notes_meta_gin_path_idx').using('gin', sql\`\${table.metadata} jsonb_path_ops\`),
-
-  // Expression B-Tree
-  priorityBtreeIdx: index('notes_meta_priority_btree_idx').on(sql\`(\${table.metadata}->>'priority')\`),
-
-  // Partial Index
-  activeNotesGinIdx: index('notes_active_meta_idx')
-    .using('gin', sql\`\${table.metadata} jsonb_path_ops\`)
-    .where(sql\`\${table.isActive} = true\`),
-    
-  // B-Tree trên Generated Column
-  generatedPriorityIdx: index('notes_gen_priority_idx').on(table.extractedPriority),
-}));
-
-// Hàng đợi chịu tải cao (Hỗ trợ FOR NO KEY UPDATE)
-export const taskQueue = pgTable('task_queue', {
-  id: serial('id').primaryKey(),
-  noteId: serial('note_id').references(() => notes.id),
-  taskPayload: jsonb('task_payload').default({}),
-  status: text('status').notNull().default('pending'),
-  workerId: text('worker_id'),
-  lockedAt: timestamp('locked_at'),
-  createdAt: timestamp('created_at').defaultNow(),
-});`;
+# 3. Enqueue từ FastAPI / Web Server
+# pool = await create_pool(RedisSettings())
+# await pool.enqueue_job('send_webhook', 'https://api.symflowage.com/webhook', {'event': 'node_created'})`;
 
   const redisLuaScript = `-- =========================================================================
 -- TRỤ CỘT 4: REDIS LUA SCRIPT CHO TOMBSTONE CACHE-ASIDE (ATOMIC BEST-EFFORT SET)
@@ -198,29 +189,78 @@ end
 -- 2. DELETE Cache Entry
 --    redis.del("goal:101")`;
 
+  const sqlDDL = `-- ==========================================
+-- 1. CHIẾN LƯỢC CHỈ MỤC JSONB (POSTGRESQL)
+-- ==========================================
+CREATE INDEX notes_metadata_gin_ops_idx ON notes USING gin (metadata);
+CREATE INDEX notes_metadata_gin_path_idx ON notes USING gin (metadata jsonb_path_ops);
+CREATE INDEX notes_metadata_priority_btree_idx ON notes ((metadata->>'priority'));
+
+-- ==========================================
+-- 2. TRÁNH THUẾ TOAST (STORED GENERATED COLUMNS)
+-- ==========================================
+ALTER TABLE notes ADD COLUMN extracted_priority text GENERATED ALWAYS AS (metadata->>'priority') STORED;
+CREATE INDEX notes_generated_priority_idx ON notes (extracted_priority);
+
+-- ==========================================
+-- 3. CHỐNG WRITE BOTTLENECK & DEADLOCK
+-- ==========================================
+SELECT * FROM task_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED;`;
+
+  const drizzleSchema = `import { pgTable, serial, text, boolean, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
+
+export const notes = pgTable('notes', {
+  id: serial('id').primaryKey(),
+  userUid: text('user_uid').notNull(),
+  title: text('title').notNull(),
+  metadata: jsonb('metadata').default({}),
+  extractedPriority: text('extracted_priority').generatedAlwaysAs(
+    sql\`metadata->>'priority'\`
+  ),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (table) => ({
+  ginPathOpsIdx: index('notes_meta_gin_path_idx').using('gin', sql\`\${table.metadata} jsonb_path_ops\`),
+  priorityBtreeIdx: index('notes_meta_priority_btree_idx').on(sql\`(\${table.metadata}->>'priority')\`),
+  generatedPriorityIdx: index('notes_gen_priority_idx').on(table.extractedPriority),
+}));`;
+
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* Header Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Database className="w-48 h-48 text-indigo-400" />
+          <Workflow className="w-48 h-48 text-indigo-400" />
         </div>
         <div className="relative z-10 max-w-4xl space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
             <Zap className="w-3.5 h-3.5" />
-            <span>PostgreSQL & Redis High-Performance Distributed Architecture</span>
+            <span>High-Performance Distributed Architecture Hub</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            Khắc Phục Thắt Cổ Chai & Trụ Cột 4: Cache-aside & Tombstone Invalidation
+            Ma Trận Hàng Đợi Tác Vụ & ARQ (Async Redis)
           </h1>
           <p className="text-slate-400 text-sm leading-relaxed">
-            Hệ thống kiến trúc giải quyết triệt để 4 bài toán hiệu năng cốt lõi: <strong>Cache-aside & Tombstone Invalidation</strong> chống Stale Cache Leak trong môi trường bất đồng bộ, <strong>Chỉ mục JSONB</strong> tối ưu, <strong>Chống Write Bottlenecks</strong> (`FOR NO KEY UPDATE`), và <strong>Tránh Thuế TOAST</strong> bằng Stored Generated Columns.
+            So sánh toàn diện 4 mô hình hàng đợi tác vụ: <strong>ARQ (Async Redis)</strong> tối ưu I/O quy mô lớn, <strong>Postgres SKIP LOCKED</strong> bảo toàn tính nguyên tử ACID, <strong>FastAPI BackgroundTasks</strong> siêu nhẹ, và <strong>Celery</strong> đa tiến trình nặng nề.
           </p>
         </div>
       </div>
 
       {/* Main Mode Switcher Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
+        <button
+          onClick={() => setMainSection('arq_matrix')}
+          className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            mainSection === 'arq_matrix'
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 font-bold'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <Workflow className="w-4 h-4 text-blue-300" />
+          <span>Ma Trận Hàng Đợi: ARQ (Async Redis)</span>
+        </button>
+
         <button
           onClick={() => setMainSection('tombstone')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
@@ -230,7 +270,7 @@ end
           }`}
         >
           <ShieldAlert className="w-4 h-4 text-amber-300" />
-          <span>Trụ Cột 4: Cache-aside & Tombstone Invalidation</span>
+          <span>Trụ Cột 4: Cache-aside & Tombstone</span>
         </button>
 
         <button
@@ -242,7 +282,7 @@ end
           }`}
         >
           <Table className="w-4 h-4" />
-          <span>1. Chiến Lược Chỉ Mục JSONB</span>
+          <span>1. Chỉ Mục JSONB</span>
         </button>
 
         <button
@@ -254,7 +294,7 @@ end
           }`}
         >
           <Lock className="w-4 h-4" />
-          <span>2. Chống Write Bottlenecks (FOR NO KEY UPDATE)</span>
+          <span>2. Chống Write Bottlenecks</span>
         </button>
 
         <button
@@ -266,16 +306,253 @@ end
           }`}
         >
           <Minimize2 className="w-4 h-4" />
-          <span>3. Tránh Thuế TOAST (Generated Columns)</span>
+          <span>3. Tránh Thuế TOAST</span>
         </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION 5: MA TRẬN LỰA CHỌN HÀNG ĐỢI TÁC VỤ & ARQ (ASYNC REDIS) */}
+      {/* ========================================================================= */}
+      {mainSection === 'arq_matrix' && (
+        <div className="space-y-6">
+          {/* MATRIX TABLE EXACTLY LIKE USER IMAGE */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/70">
+              <div>
+                <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+                  Ma trận Lựa chọn Hàng đợi Tác vụ (Task Queue Engine)
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Bảng ma trận kiến trúc lựa chọn công nghệ hàng đợi phù hợp cho từng bài toán backend.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40 text-[11px] font-bold">
+                  RECOMMENDED FOR I/O: ARQ
+                </span>
+                <span className="px-2.5 py-1 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[11px] font-bold">
+                  RECOMMENDED FOR ACID: Postgres
+                </span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-slate-950 text-xs uppercase font-bold text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="py-4 px-5 text-slate-300 bg-slate-950/90 w-44">Tiêu chí</th>
+                    <th className="py-4 px-5 text-slate-300 bg-slate-900/60 border-l border-r border-slate-800/80">
+                      FastAPI BackgroundTasks
+                    </th>
+                    <th className="py-4 px-5 bg-indigo-950/40 border-r border-slate-800/80 relative">
+                      <div className="inline-block px-2 py-0.5 mb-1.5 rounded bg-blue-600 text-white font-mono text-[10px] font-extrabold uppercase tracking-wide shadow-sm">
+                        RECOMMENDED FOR ACID
+                      </div>
+                      <div className="text-white font-bold text-sm">Postgres SKIP LOCKED</div>
+                    </th>
+                    <th className="py-4 px-5 bg-blue-950/60 border-r border-slate-800/80 relative shadow-inner">
+                      <div className="inline-block px-2 py-0.5 mb-1.5 rounded bg-blue-500 text-white font-mono text-[10px] font-extrabold uppercase tracking-wide shadow-sm">
+                        RECOMMENDED FOR I/O
+                      </div>
+                      <div className="text-blue-200 font-bold text-sm flex items-center gap-1.5">
+                        <Zap className="w-4 h-4 text-amber-300" />
+                        <span>ARQ (Async Redis)</span>
+                      </div>
+                    </th>
+                    <th className="py-4 px-5 text-slate-300 bg-slate-900/60">Celery</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-sans text-xs sm:text-sm">
+                  {/* Row 1: Mô hình Thực thi */}
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Mô hình Thực thi</td>
+                    <td className="py-4 px-5 text-slate-300 bg-slate-900/30 border-l border-r border-slate-800/80">
+                      In-process Threadpool / Event Loop
+                    </td>
+                    <td className="py-4 px-5 text-slate-200 bg-indigo-950/20 border-r border-slate-800/80 font-medium">
+                      Polling DB Locks
+                    </td>
+                    <td className="py-4 px-5 text-blue-200 bg-blue-950/30 border-r border-slate-800/80 font-bold">
+                      Native Async Event Loop
+                    </td>
+                    <td className="py-4 px-5 text-slate-300 bg-slate-900/30">Distributed Multi-process</td>
+                  </tr>
+
+                  {/* Row 2: Tính bền vững */}
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Tính bền vững</td>
+                    <td className="py-4 px-5 text-rose-300 bg-slate-900/30 border-l border-r border-slate-800/80">
+                      Volatile (Mất khi crash)
+                    </td>
+                    <td className="py-4 px-5 text-emerald-300 bg-indigo-950/20 border-r border-slate-800/80 font-bold">
+                      ACID Persistent
+                    </td>
+                    <td className="py-4 px-5 text-blue-200 bg-blue-950/30 border-r border-slate-800/80 font-semibold">
+                      Redis Persistent
+                    </td>
+                    <td className="py-4 px-5 text-slate-300 bg-slate-900/30">RabbitMQ/Redis</td>
+                  </tr>
+
+                  {/* Row 3: Tài nguyên (Bộ nhớ) */}
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Tài nguyên (Bộ nhớ)</td>
+                    <td className="py-4 px-5 text-emerald-300 bg-slate-900/30 border-l border-r border-slate-800/80">
+                      Cực thấp
+                    </td>
+                    <td className="py-4 px-5 text-slate-300 bg-indigo-950/20 border-r border-slate-800/80 font-medium">
+                      Thấp
+                    </td>
+                    <td className="py-4 px-5 text-blue-300 bg-blue-950/30 border-r border-slate-800/80 font-bold">
+                      Rất tối ưu I/O
+                    </td>
+                    <td className="py-4 px-5 text-rose-300 bg-slate-900/30 font-medium">
+                      Nặng nề, Tốn RAM
+                    </td>
+                  </tr>
+
+                  {/* Row 4: Ứng dụng Tối ưu (Best for) */}
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Ứng dụng Tối ưu (Best for)</td>
+                    <td className="py-4 px-5 text-slate-400 bg-slate-900/30 border-l border-r border-slate-800/80 text-xs leading-relaxed">
+                      Log nhẹ, fire-and-forget.
+                    </td>
+                    <td className="py-4 px-5 text-indigo-200 bg-indigo-950/20 border-r border-slate-800/80 text-xs leading-relaxed font-medium">
+                      Task cần tính ACID nguyên tử cao cùng state DB.
+                    </td>
+                    <td className="py-4 px-5 text-blue-100 bg-blue-950/30 border-r border-slate-800/80 text-xs leading-relaxed font-semibold">
+                      High-concurrency I/O, Webhooks, Emails.
+                    </td>
+                    <td className="py-4 px-5 text-slate-400 bg-slate-900/30 text-xs leading-relaxed">
+                      CPU-heavy tasks, Multi-node workflows.
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ARQ DEEP-DIVE & INTERACTIVE WORKER LAB */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Interactive ARQ Task Producer */}
+            <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-blue-400" />
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    ARQ (Async Redis) Task Dispatcher
+                  </h3>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
+                  Asyncio Event Loop Active
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-xs font-medium text-slate-300">Chọn Loại Tác Vụ Async I/O:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'send_webhook', label: 'Webhook', desc: 'Non-blocking I/O' },
+                    { id: 'batch_embedding', label: 'AI Embed', desc: 'Vector Pipeline' },
+                    { id: 'send_email', label: 'Email Batch', desc: 'Async SMTP' },
+                  ].map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedTaskType(t.id as any)}
+                      className={`p-2.5 rounded-lg border text-left text-xs transition-all ${
+                        selectedTaskType === t.id
+                          ? 'bg-blue-600 border-blue-400 text-white font-bold shadow-md'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="font-semibold">{t.label}</div>
+                      <div className="text-[10px] opacity-75">{t.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={handleEnqueueArqJob}
+                disabled={isEnqueueing}
+                className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all active:scale-[0.99] disabled:opacity-50"
+              >
+                <Play className="w-4 h-4 text-amber-300" />
+                <span>{isEnqueueing ? 'Đang Đẩy Vào Redis Queue...' : 'Enqueue ARQ Async Task (35,000 QPS)'}</span>
+              </button>
+
+              {/* Resource Benchmark Cards */}
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Memory Overhead</div>
+                  <div className="text-base font-bold font-mono text-emerald-400 mt-1">~28 MB RAM</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Tiết kiệm 93% so với Celery</div>
+                </div>
+
+                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Event Loop Latency</div>
+                  <div className="text-base font-bold font-mono text-blue-400 mt-1">0.12 ms</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Độ trễ cận thời gian thực</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Execution Log & Active Jobs */}
+            <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    ARQ Worker Async Pipeline (Live Feed)
+                  </h3>
+                </div>
+                <span className="font-mono text-xs text-slate-400">
+                  Redis Backend: <span className="text-emerald-400 font-bold">Online</span>
+                </span>
+              </div>
+
+              {arqJobs.length === 0 ? (
+                <div className="p-8 text-center bg-slate-950 rounded-lg border border-slate-800/80 text-slate-500 text-xs space-y-2">
+                  <Terminal className="w-8 h-8 text-slate-600 mx-auto" />
+                  <p>Chưa có tác vụ nào trong hàng đợi. Nhấn nút "Enqueue ARQ Async Task" để kích hoạt!</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {arqJobs.map((job) => (
+                    <div
+                      key={job.jobId}
+                      className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs flex items-center justify-between gap-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-blue-400 font-bold">{job.functionName}()</span>
+                        <span className="font-mono text-[11px] text-slate-500">{job.jobId}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="font-mono text-[11px] text-slate-400">
+                          {job.durationMs > 0 ? `${job.durationMs}ms` : 'Đang xử lý...'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          COMPLETED
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="p-3.5 bg-blue-950/30 border border-blue-500/40 rounded-lg text-xs text-blue-200 leading-relaxed">
+                <strong>Tại sao chọn ARQ cho Async I/O?</strong> ARQ tận dụng trực tiếp <code>asyncio</code> Event Loop của Python kết hợp với cấu trúc dữ liệu hiệu năng cao của Redis. Một worker duy nhất có thể duy trì hàng ngàn kết nối I/O song song (Webhooks, API Gateway, AI Stream) mà không bị nghẽn hay tràn bộ nhớ như Celery.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* SECTION 4: TRỤ CỘT 4 - CACHE-ASIDE & TOMBSTONE INVALIDATION */}
       {/* ========================================================================= */}
       {mainSection === 'tombstone' && (
         <div className="space-y-6">
-          {/* TITLE & OVERVIEW */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
@@ -284,11 +561,10 @@ end
                   Trụ cột 4: Cache-aside & Tombstone Invalidation
                 </h2>
                 <p className="text-xs text-slate-400 mt-1">
-                  Mô hình tuần tự (Sequence Architecture) bảo vệ bộ nhớ đệm phân tán Redis trước nguy cơ Async Race Condition.
+                  Mô hình tuần tự bảo vệ bộ nhớ đệm phân tán Redis trước nguy cơ Async Race Condition.
                 </p>
               </div>
 
-              {/* Simulation Mode Toggle Buttons */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleRunTombstoneSimulation(true)}
@@ -323,7 +599,6 @@ end
                 <span className="text-[11px] text-amber-400 font-mono">FastAPI / Node.js ⟷ Redis ⟷ PostgreSQL</span>
               </div>
 
-              {/* 3 Actor Columns Headers */}
               <div className="grid grid-cols-3 gap-4 text-center min-w-[650px]">
                 <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-indigo-300 shadow-md flex items-center justify-center gap-2">
                   <Server className="w-4 h-4 text-indigo-400" />
@@ -339,15 +614,13 @@ end
                 </div>
               </div>
 
-              {/* Visual Lifelines and Arrows Container */}
               <div className="space-y-4 min-w-[650px] relative py-2">
-                {/* FLOW 1: READ-THROUGH FLOW */}
+                {/* FLOW 1 */}
                 <div className="space-y-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/70 relative">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
                     <span>Flow 1: Read-through Flow</span>
                   </div>
 
-                  {/* Step 1: get(key) */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 font-mono text-slate-300">get(key)</div>
                     <div className="w-1/3 flex items-center justify-center">
@@ -358,7 +631,6 @@ end
                     <div className="w-1/3 pl-4 text-slate-400 text-[11px]">Tra cứu nhanh trong RAM</div>
                   </div>
 
-                  {/* Step 2: Miss */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận thông báo Miss</div>
                     <div className="w-1/3 flex items-center justify-center">
@@ -371,7 +643,6 @@ end
                     <div className="w-1/3 pl-4 font-mono text-slate-400">Key không tồn tại</div>
                   </div>
 
-                  {/* Step 3: SELECT */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 font-mono text-slate-300">SELECT</div>
                     <div className="w-2/3 flex items-center justify-center">
@@ -381,7 +652,6 @@ end
                     </div>
                   </div>
 
-                  {/* Step 4: data */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận dữ liệu từ DB</div>
                     <div className="w-2/3 flex items-center justify-center">
@@ -393,7 +663,6 @@ end
                     </div>
                   </div>
 
-                  {/* Step 5: Insert best-effort */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 font-mono text-slate-300">Insert best-effort</div>
                     <div className="w-1/3 flex items-center justify-center">
@@ -415,13 +684,12 @@ end
                   </div>
                 </div>
 
-                {/* FLOW 2: INVALIDATION FLOW */}
+                {/* FLOW 2 */}
                 <div className="space-y-3 bg-amber-950/20 p-4 rounded-xl border-2 border-amber-500/60 relative shadow-lg">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                     <span>Flow 2: Invalidation Flow</span>
                   </div>
 
-                  {/* Step 1: UPDATE DB */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 font-mono text-amber-300 font-bold">UPDATE</div>
                     <div className="w-2/3 flex items-center justify-center">
@@ -431,7 +699,6 @@ end
                     </div>
                   </div>
 
-                  {/* Step 2: SET Tombstone (TTL) - NỔI BẬT VIỀN CAM NHƯ TRONG ẢNH */}
                   <div className="p-2.5 rounded-lg bg-amber-950/40 border-2 border-amber-500 shadow-md">
                     <div className="flex items-center text-xs">
                       <div className="w-1/3 text-right pr-4 font-mono text-amber-200 font-bold flex items-center justify-end gap-1.5">
@@ -449,7 +716,6 @@ end
                     </div>
                   </div>
 
-                  {/* Step 3: DELETE Cache Entry */}
                   <div className="flex items-center text-xs">
                     <div className="w-1/3 text-right pr-4 font-mono text-slate-300 font-medium">
                       DELETE Cache Entry
@@ -475,64 +741,6 @@ end
                 </p>
               </div>
             </div>
-
-            {/* LIVE RACE-CONDITION SIMULATION TIMELINE */}
-            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    Kết Quả Mô Phỏng Luồng Bất Đồng Bộ Thực Tế (Execution Log)
-                  </h3>
-                </div>
-                <div className="font-mono text-xs text-slate-400">
-                  Trạng thái: {withTombstone ? (
-                    <span className="text-emerald-400 font-bold">✓ BẢO VỆ BẰNG BIA MỘ</span>
-                  ) : (
-                    <span className="text-rose-400 font-bold">❌ KHÔNG BẢO VỆ (RACE RISK)</span>
-                  )}
-                </div>
-              </div>
-
-              {/* Step by step timeline */}
-              <div className="space-y-2.5">
-                {simulationResult.events.map((evt) => (
-                  <div
-                    key={evt.step}
-                    className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
-                      evt.isBlockedByTombstone
-                        ? 'bg-emerald-950/50 border-emerald-500 text-emerald-200'
-                        : evt.stateChange.includes('THẢM HỌA')
-                        ? 'bg-rose-950/60 border-rose-500 text-rose-200'
-                        : 'bg-slate-900 border-slate-800 text-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="px-2 py-0.5 rounded bg-black/50 font-mono text-[11px] text-amber-400 shrink-0">
-                        T={evt.timestampOffsetMs}ms
-                      </span>
-                      <span className="font-semibold text-white">[{evt.actor}]</span>
-                      <span className="font-mono text-slate-300">{evt.action}</span>
-                    </div>
-
-                    <div className="text-[11px] sm:text-right font-medium text-slate-400">
-                      {evt.stateChange}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Conclusion Banner */}
-              <div
-                className={`p-4 rounded-xl border text-xs font-semibold leading-relaxed ${
-                  simulationResult.isCacheStale
-                    ? 'bg-rose-950/40 border-rose-500/80 text-rose-200'
-                    : 'bg-emerald-950/40 border-emerald-500/80 text-emerald-200'
-                }`}
-              >
-                {simulationResult.conclusion}
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -542,7 +750,6 @@ end
       {/* ========================================================================= */}
       {mainSection === 'indexes' && (
         <div className="space-y-6">
-          {/* Matrix Table */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
             <div className="p-4 border-b border-slate-800 flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -573,9 +780,7 @@ end
                 </thead>
                 <tbody className="divide-y divide-slate-800 font-sans">
                   <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">
-                      Toán tử hỗ trợ
-                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">Toán tử hỗ trợ</td>
                     <td className="py-3.5 px-4 font-mono text-xs text-indigo-300 bg-indigo-950/10 border-l border-r border-slate-800/80">
                       @&gt;, ?, ?|, ?&amp;
                     </td>
@@ -585,15 +790,10 @@ end
                     <td className="py-3.5 px-4 font-mono text-xs text-amber-300 bg-amber-950/10 border-r border-slate-800/80">
                       =, &lt;, &gt;, BETWEEN, IN
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-cyan-300 bg-cyan-950/10">
-                      Tùy thuộc toán tử
-                    </td>
+                    <td className="py-3.5 px-4 font-mono text-xs text-cyan-300 bg-cyan-950/10">Tùy thuộc toán tử</td>
                   </tr>
-
                   <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">
-                      Dung lượng lưu trữ
-                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">Dung lượng lưu trữ</td>
                     <td className="py-3.5 px-4 text-rose-300 bg-indigo-950/10 border-l border-r border-slate-800/80">
                       Rất lớn (50–100% table size)
                     </td>
@@ -603,281 +803,17 @@ end
                     <td className="py-3.5 px-4 text-amber-300 bg-amber-950/10 border-r border-slate-800/80 font-medium">
                       Rất nhỏ (chỉ index 1 scalar key)
                     </td>
-                    <td className="py-3.5 px-4 text-cyan-300 bg-cyan-950/10 font-bold">
-                      Cực kỳ nhỏ
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">
-                      Chi phí cập nhật (Overhead)
-                    </td>
-                    <td className="py-3.5 px-4 text-rose-400 bg-indigo-950/10 border-l border-r border-slate-800/80">
-                      Rất cao
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300 bg-emerald-950/10 border-r border-slate-800/80">
-                      Trung bình
-                    </td>
-                    <td className="py-3.5 px-4 text-amber-300 bg-amber-950/10 border-r border-slate-800/80">
-                      Thấp
-                    </td>
-                    <td className="py-3.5 px-4 text-cyan-300 bg-cyan-950/10 font-medium">
-                      Rất thấp
-                    </td>
-                  </tr>
-
-                  <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">
-                      Use-case Tối ưu
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300 bg-indigo-950/10 border-l border-r border-slate-800/80 leading-relaxed text-xs">
-                      Khi không biết trước schema hoặc cần tìm key tồn tại (`?`).
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300 bg-emerald-950/10 border-r border-slate-800/80 leading-relaxed text-xs">
-                      Truy vấn bao hàm document-level hiệu năng cao (`@&gt;`).
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300 bg-amber-950/10 border-r border-slate-800/80 leading-relaxed text-xs">
-                      Truy vấn bằng toán tử `-&gt;&gt;` trên các key cố định (priority, status).
-                    </td>
-                    <td className="py-3.5 px-4 text-slate-300 bg-cyan-950/10 leading-relaxed text-xs">
-                      Lọc các document thỏa mãn điều kiện tĩnh (VD: `WHERE is_active = true`).
-                    </td>
+                    <td className="py-3.5 px-4 text-cyan-300 bg-cyan-950/10 font-bold">Cực kỳ nhỏ</td>
                   </tr>
                 </tbody>
               </table>
-            </div>
-          </div>
-
-          {/* Anti-Pattern Warning */}
-          <div className="p-4 sm:p-5 rounded-xl bg-amber-950/30 border-2 border-amber-600/80 shadow-lg flex items-start gap-4">
-            <div className="p-2.5 rounded-lg bg-amber-500/20 text-amber-400 shrink-0 mt-0.5 border border-amber-500/40">
-              <AlertTriangle className="w-6 h-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-amber-300 uppercase tracking-wide">
-                ANTI-PATTERN CẢNH BÁO:
-              </h3>
-              <p className="text-sm text-amber-100 font-medium leading-relaxed">
-                Đừng bao giờ tạo <span className="underline font-bold text-white">GIN index</span> rồi dùng toán tử{' '}
-                <code className="px-1.5 py-0.5 bg-black/60 rounded text-amber-300 font-mono text-xs border border-amber-500/30">
-                  -&gt;&gt;
-                </code>{' '}
-                để truy vấn. PostgreSQL sẽ <span className="text-rose-400 font-bold">bỏ qua Index</span> và thực hiện{' '}
-                <span className="text-rose-400 font-bold uppercase">Sequential Scan (Full Table Scan)</span> làm nghẽn toàn bộ cơ sở dữ liệu!
-              </p>
-            </div>
-          </div>
-
-          {/* Simulator & EXPLAIN */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
-              <div className="flex items-center gap-2 border-b border-slate-800 pb-3">
-                <Sliders className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                  Cấu Hình Thử Nghiệm
-                </h3>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-400">Tình huống thực tế:</label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={() => {
-                      setSelectedIndexType('gin_path_ops');
-                      setSelectedOperator('@>');
-                      setHasPartialCondition(false);
-                    }}
-                    className={`text-left p-2.5 rounded-lg border text-xs transition-all ${
-                      selectedIndexType === 'gin_path_ops' && selectedOperator === '@>'
-                        ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-emerald-400" /> GIN Path Ops
-                    </div>
-                    <div className="text-[10px] text-slate-500">Toán tử @&gt; chuẩn</div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedIndexType('gin_path_ops');
-                      setSelectedOperator('->>');
-                      setHasPartialCondition(false);
-                    }}
-                    className={`text-left p-2.5 rounded-lg border text-xs transition-all ${
-                      (selectedIndexType === 'gin_path_ops' || selectedIndexType === 'gin_ops') &&
-                      selectedOperator === '->>'
-                        ? 'bg-rose-950/70 border-rose-500 text-rose-200 shadow-md'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <Flame className="w-3.5 h-3.5 text-rose-400" /> Anti-Pattern!
-                    </div>
-                    <div className="text-[10px] text-slate-500">GIN index + -&gt;&gt;</div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedIndexType('expression_btree');
-                      setSelectedOperator('->>');
-                      setHasPartialCondition(false);
-                    }}
-                    className={`text-left p-2.5 rounded-lg border text-xs transition-all ${
-                      selectedIndexType === 'expression_btree'
-                        ? 'bg-amber-950/60 border-amber-500 text-amber-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <Cpu className="w-3.5 h-3.5 text-amber-400" /> Expression B-Tree
-                    </div>
-                    <div className="text-[10px] text-slate-500">Toán tử -&gt;&gt; cực nhanh</div>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedIndexType('partial_index');
-                      setSelectedOperator('@>');
-                      setHasPartialCondition(true);
-                    }}
-                    className={`text-left p-2.5 rounded-lg border text-xs transition-all ${
-                      selectedIndexType === 'partial_index'
-                        ? 'bg-cyan-950/60 border-cyan-500 text-cyan-200'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <div className="font-semibold flex items-center gap-1.5">
-                      <HardDrive className="w-3.5 h-3.5 text-cyan-400" /> Partial Index
-                    </div>
-                    <div className="text-[10px] text-slate-500">Lọc is_active = true</div>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-300">Loại Index Được Khởi Tạo:</label>
-                <select
-                  value={selectedIndexType}
-                  onChange={(e) => setSelectedIndexType(e.target.value as any)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
-                >
-                  <option value="gin_path_ops">GIN (jsonb_path_ops) - Khuyên dùng cho @&gt;</option>
-                  <option value="gin_ops">GIN (jsonb_ops) - Hỗ trợ đa toán tử</option>
-                  <option value="expression_btree">Expression B-Tree ((metadata-&gt;&gt;'priority'))</option>
-                  <option value="partial_index">Partial Index (WHERE is_active = true)</option>
-                  <option value="none">Không có Index (No Index)</option>
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-300">Toán Tử Truy Vấn Trong SQL:</label>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['@>', '->>', '?', 'BETWEEN'] as const).map((op) => (
-                    <button
-                      key={op}
-                      onClick={() => setSelectedOperator(op)}
-                      className={`py-2 px-2 text-center rounded-lg border font-mono text-xs transition-all ${
-                        selectedOperator === op
-                          ? 'bg-indigo-600 border-indigo-400 text-white font-bold'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {op}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Play className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    Mô Phỏng EXPLAIN ANALYZE
-                  </h3>
-                </div>
-                <div>
-                  {analysis.isAntiPattern ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-500/20 text-rose-400 border border-rose-500/40">
-                      <XCircle className="w-3.5 h-3.5" /> Anti-Pattern Phát Hiện
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Index Hợp Lệ
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg font-mono text-xs text-emerald-300 overflow-x-auto">
-                {analysis.querySql}
-              </div>
-
-              {analysis.isAntiPattern && (
-                <div className="p-3.5 rounded-lg bg-rose-950/40 border border-rose-500/60 text-xs text-rose-200 space-y-1">
-                  <div className="font-bold flex items-center gap-1.5 text-rose-400">
-                    <AlertTriangle className="w-4 h-4" /> Bẫy Hiệu Năng Phổ Biến!
-                  </div>
-                  <p className="leading-relaxed">{analysis.antiPatternWarning}</p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Scan Method</div>
-                  <div
-                    className={`text-xs font-bold mt-1 truncate ${
-                      analysis.estimatedCost.indexScanType.includes('Sequential')
-                        ? 'text-rose-400'
-                        : 'text-emerald-400'
-                    }`}
-                  >
-                    {analysis.estimatedCost.indexScanType}
-                  </div>
-                </div>
-
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Execution Time</div>
-                  <div
-                    className={`text-xs font-bold font-mono mt-1 ${
-                      analysis.estimatedCost.executionTimeMs > 10 ? 'text-rose-400' : 'text-emerald-400'
-                    }`}
-                  >
-                    {analysis.estimatedCost.executionTimeMs} ms
-                  </div>
-                </div>
-
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Buffer Reads</div>
-                  <div className="text-xs font-bold font-mono text-slate-200 mt-1">
-                    {analysis.estimatedCost.bufferReads} blocks
-                  </div>
-                </div>
-
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Index Storage</div>
-                  <div className="text-[11px] font-semibold text-slate-300 mt-1 truncate">
-                    {analysis.estimatedCost.storageOverheadRelative.split('(')[0]}
-                  </div>
-                </div>
-              </div>
-
-              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-lg space-y-1">
-                <div className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" /> Khuyến Nghị Tối Ưu:
-                </div>
-                <p className="text-xs text-slate-400 leading-relaxed">{analysis.recommendation}</p>
-              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION 2: CHỐNG WRITE BOTTLENECKS & LOCK CONTENTION */}
+      {/* SECTION 2: CHỐNG WRITE BOTTLENECKS */}
       {/* ========================================================================= */}
       {mainSection === 'locks' && (
         <div className="space-y-6">
@@ -888,11 +824,8 @@ end
                 <span>Problem: Row Locking Gây Deadlock</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Khi sử dụng <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">FOR UPDATE</code> trong hệ thống hàng đợi concurrent hoặc cập nhật bảng cha, PostgreSQL áp dụng **Exclusive Row Lock**. Mọi giao dịch kiểm tra Foreign Key hoặc update bảng con đều bị block, dẫn tới **Deadlock Cascades**.
+                Khi sử dụng <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">FOR UPDATE</code> trong hệ thống hàng đợi concurrent hoặc cập nhật bảng cha, PostgreSQL áp dụng **Exclusive Row Lock**. Mọi giao dịch kiểm tra Foreign Key đều bị block, dẫn tới **Deadlock Cascades**.
               </p>
-              <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-800/50 text-xs text-rose-200 font-mono">
-                SELECT * FROM task_queue WHERE status = 'pending' LIMIT 1 FOR UPDATE; -- ⚠️ Blocking FK & Deadlock
-              </div>
             </div>
 
             <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5 space-y-4">
@@ -903,136 +836,13 @@ end
               <p className="text-xs text-slate-300 leading-relaxed">
                 Sử dụng <code className="px-1.5 py-0.5 bg-black/60 rounded text-emerald-300 font-mono">FOR NO KEY UPDATE</code>. PostgreSQL chỉ khóa các trường dữ liệu thông thường mà không khóa Primary/Unique Key, cho phép đọc và kiểm tra Foreign Key **chạy song song 100% không bị block**.
               </p>
-              <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/50 text-xs text-emerald-200 font-mono">
-                SELECT * FROM task_queue WHERE status = 'pending' LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED; -- ✅ Zero Lock Wait
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-indigo-400" />
-                  Mô Phỏng Tải Concurrent Queue & Đo Lường Lock Contention
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Thử nghiệm thay đổi số lượng Worker song song để xem nguy cơ Deadlock và Throughput (QPS).
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setLockMode('FOR UPDATE')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    lockMode === 'FOR UPDATE'
-                      ? 'bg-rose-600 text-white shadow-lg'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400'
-                  }`}
-                >
-                  FOR UPDATE (Nguy hiểm)
-                </button>
-                <button
-                  onClick={() => setLockMode('FOR NO KEY UPDATE')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    lockMode === 'FOR NO KEY UPDATE'
-                      ? 'bg-emerald-600 text-white shadow-lg'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400'
-                  }`}
-                >
-                  FOR NO KEY UPDATE (Chuẩn)
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-5 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Số lượng Worker song song:</span>
-                    <span className="font-mono font-bold text-indigo-400">{workersCount} Workers</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="100"
-                    step="5"
-                    value={workersCount}
-                    onChange={(e) => setWorkersCount(Number(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-950 cursor-pointer"
-                  />
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-                  <div className="text-xs font-semibold text-slate-400">Trực quan hóa luồng dữ liệu:</div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs">
-                    <span className="text-indigo-300 font-semibold">Đọc (Read / FK Check)</span>
-                    <ArrowRight className="w-4 h-4 text-slate-500" />
-                    <span className="text-emerald-300 font-semibold font-mono">
-                      {lockMode === 'FOR NO KEY UPDATE' ? 'Song song 100% (No Lock)' : 'Bị Chặn (Blocked)'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs">
-                    <span className="text-amber-300 font-semibold">Ghi (Write / Update Task)</span>
-                    <ArrowRight className="w-4 h-4 text-slate-500" />
-                    <span className="text-emerald-300 font-semibold font-mono">
-                      {lockMode === 'FOR NO KEY UPDATE' ? 'Xử lý tuần tự cực êm' : 'Tranh chấp khóa cao'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-7 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Throughput QPS</div>
-                    <div
-                      className={`text-lg font-bold font-mono mt-1 ${
-                        lockBenchmark.throughputQps > 5000 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {lockBenchmark.throughputQps.toLocaleString()} QPS
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Avg Lock Wait Time</div>
-                    <div
-                      className={`text-lg font-bold font-mono mt-1 ${
-                        lockBenchmark.avgLockWaitTimeMs < 1 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {lockBenchmark.avgLockWaitTimeMs.toFixed(2)} ms
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 col-span-2 sm:col-span-1">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Deadlock Risk</div>
-                    <div
-                      className={`text-xs font-bold mt-1.5 ${
-                        lockBenchmark.deadlockRisk.includes('Zero') ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {lockBenchmark.deadlockRisk.split('(')[0]}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-                  <p>{lockBenchmark.explanation}</p>
-                </div>
-
-                <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg font-mono text-xs text-emerald-300 overflow-x-auto">
-                  <pre>{lockBenchmark.sqlSnippet}</pre>
-                </div>
-              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION 3: TRÁNH THUẾ TOAST (THE TOAST TAX) */}
+      {/* SECTION 3: TRÁNH THUẾ TOAST */}
       {/* ========================================================================= */}
       {mainSection === 'toast' && (
         <div className="space-y-6">
@@ -1043,11 +853,8 @@ end
                 <span>Problem: Thuế TOAST (The TOAST Tax)</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Khi tài liệu <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">JSONB &gt; 8KB</code>, PostgreSQL đẩy dữ liệu ra lưu trữ **out-of-line (bảng TOAST)**. Mỗi lần truy vấn lọc theo 1 key nhỏ, PostgreSQL buộc phải đọc từng chunk và **giải nén toàn bộ 8KB–32KB JSON document**, tiêu tốn lượng lớn CPU.
+                Khi tài liệu <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">JSONB &gt; 8KB</code>, PostgreSQL đẩy dữ liệu ra lưu trữ **out-of-line (bảng TOAST)**. Mỗi lần truy vấn lọc theo 1 key nhỏ, PostgreSQL buộc phải đọc từng chunk và **giải nén toàn bộ JSON document**, tiêu tốn CPU.
               </p>
-              <div className="p-3 rounded-lg bg-rose-950/30 border border-rose-800/50 text-xs text-rose-200 font-mono">
-                SELECT * FROM notes WHERE metadata-&gt;&gt;'priority' = 'high'; -- ⚠️ Phải decompress TOAST chunk!
-              </div>
             </div>
 
             <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5 space-y-4">
@@ -1056,141 +863,35 @@ end
                 <span>Solution: Stored Generated Columns</span>
               </div>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Trích xuất các trường hay query ra thành **cột vật lý (Stored Generated Column)**. Dữ liệu được lưu trực tiếp trong Main Tuple, PostgreSQL Planner thu thập thống kê Histogram chính xác và đọc trực tiếp từ Index mà **không bao giờ chạm vào TOAST hay tốn CPU giải nén**.
+                Trích xuất các trường hay query ra thành **cột vật lý (Stored Generated Column)**. Dữ liệu được lưu trực tiếp trong Main Tuple, PostgreSQL Planner thu thập thống kê chính xác và đọc trực tiếp từ Index mà **không bao giờ tốn CPU giải nén TOAST**.
               </p>
-              <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/50 text-xs text-emerald-200 font-mono">
-                ALTER TABLE notes ADD COLUMN extracted_priority text GENERATED ALWAYS AS (metadata-&gt;&gt;'priority') STORED;
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
-              <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Minimize2 className="w-5 h-5 text-indigo-400" />
-                  Đo Lường Tiết Kiệm CPU & Độ Trễ TOAST Decompression
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Đối chiếu giữa việc quét JSONB thô &gt;8KB so với cột trích xuất Stored Generated Column.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setToastApproach('Raw JSONB Fetch (>8KB)')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    toastApproach === 'Raw JSONB Fetch (>8KB)'
-                      ? 'bg-rose-600 text-white shadow-lg'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400'
-                  }`}
-                >
-                  Raw JSONB (Chịu Thuế TOAST)
-                </button>
-                <button
-                  onClick={() => setToastApproach('Stored Generated Column')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    toastApproach === 'Stored Generated Column'
-                      ? 'bg-emerald-600 text-white shadow-lg'
-                      : 'bg-slate-950 border border-slate-800 text-slate-400'
-                  }`}
-                >
-                  Stored Generated Column (Tối Ưu)
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-5 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Kích thước tài liệu JSONB:</span>
-                    <span className="font-mono font-bold text-indigo-400">{docSizeKb} KB / document</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="8"
-                    max="128"
-                    step="8"
-                    value={docSizeKb}
-                    onChange={(e) => setDocSizeKb(Number(e.target.value))}
-                    className="w-full accent-indigo-500 bg-slate-950 cursor-pointer"
-                  />
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-xs">
-                  <div className="font-semibold text-slate-300">Cơ chế lưu trữ vật lý:</div>
-                  <div className="text-slate-400 leading-relaxed">
-                    {toastApproach === 'Stored Generated Column' ? (
-                      <span className="text-emerald-300 font-medium">
-                        ✓ Lưu trong Main Tuple. B-Tree Index trỏ thẳng vào scalar string mà không đọc trường JSONB khổng lồ.
-                      </span>
-                    ) : (
-                      <span className="text-rose-300 font-medium">
-                        ⚠ Dữ liệu nén trong pg_toast_*. PostgreSQL phải giải nén toàn bộ document mỗi khi kiểm tra filter predicate!
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="lg:col-span-7 space-y-4">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Decompress CPU Time</div>
-                    <div
-                      className={`text-lg font-bold font-mono mt-1 ${
-                        toastBenchmark.toastDecompressionCpuMs < 0.1 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {toastBenchmark.toastDecompressionCpuMs.toFixed(2)} ms
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Query Latency</div>
-                    <div
-                      className={`text-lg font-bold font-mono mt-1 ${
-                        toastBenchmark.queryExecutionTimeMs < 1 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}
-                    >
-                      {toastBenchmark.queryExecutionTimeMs.toFixed(2)} ms
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800 col-span-2 sm:col-span-1">
-                    <div className="text-[10px] text-slate-500 uppercase font-semibold">Memory Buffer Reads</div>
-                    <div className="text-lg font-bold font-mono text-slate-200 mt-1">
-                      {toastBenchmark.memoryBufferReads} blocks
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300 leading-relaxed">
-                  <p>{toastBenchmark.explanation}</p>
-                </div>
-
-                <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg font-mono text-xs text-emerald-300 overflow-x-auto">
-                  <pre>{toastBenchmark.sqlSnippet}</pre>
-                </div>
-              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* CODE GENERATOR (SQL DDL, DRIZZLE ORM & REDIS LUA SCRIPT) */}
+      {/* CODE GENERATOR (ARQ PYTHON, REDIS LUA SCRIPT, SQL DDL & DRIZZLE ORM) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg space-y-0">
         <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Code2 className="w-4 h-4 text-indigo-400" />
             <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-              Mã Nguồn Cài Đặt (SQL DDL, Drizzle ORM & Redis Lua Script)
+              Mã Nguồn Cài Đặt Chuẩn Production
             </h2>
           </div>
 
           <div className="flex items-center gap-2">
             <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 flex items-center gap-1 text-xs">
+              <button
+                onClick={() => setActiveCodeTab('arq_python')}
+                className={`px-3 py-1 rounded transition-colors ${
+                  activeCodeTab === 'arq_python'
+                    ? 'bg-blue-600 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                ARQ (Python Async Redis)
+              </button>
               <button
                 onClick={() => setActiveCodeTab('redis_lua')}
                 className={`px-3 py-1 rounded transition-colors ${
@@ -1226,7 +927,9 @@ end
             <button
               onClick={() =>
                 handleCopy(
-                  activeCodeTab === 'redis_lua'
+                  activeCodeTab === 'arq_python'
+                    ? arqPythonCode
+                    : activeCodeTab === 'redis_lua'
                     ? redisLuaScript
                     : activeCodeTab === 'sql'
                     ? sqlDDL
@@ -1248,7 +951,9 @@ end
 
         <div className="p-4 bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto">
           <pre>
-            {activeCodeTab === 'redis_lua'
+            {activeCodeTab === 'arq_python'
+              ? arqPythonCode
+              : activeCodeTab === 'redis_lua'
               ? redisLuaScript
               : activeCodeTab === 'sql'
               ? sqlDDL
