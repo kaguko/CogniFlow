@@ -5,7 +5,7 @@ export * from './components';
 export * from './hooks/useGoals';
 
 import type { LongTermGoal } from './entities/longTermGoal';
-import type { GoalDriftStatus } from './valueObjects';
+import type { GoalDriftStatus, GoalMilestone } from './valueObjects';
 
 export interface GoalPlanRequest {
   contextTitle: string;
@@ -44,4 +44,40 @@ export function calculateDriftStatus(goal: LongTermGoal, microSteps: Array<{ goa
     unlinkedStepsCount,
     recommendation
   };
+}
+
+export interface GoalAlignmentIndexInput {
+  goalId: string;
+  previousGoalId?: string;
+  milestones: Array<GoalMilestone & { completedAt?: string }>;
+  microSteps: Array<{ goalId?: string; isAlignedWithGoal?: boolean }>;
+  now?: string;
+}
+
+export function calculateGoalAlignmentIndex({
+  goalId,
+  previousGoalId,
+  milestones,
+  microSteps,
+  now = new Date().toISOString(),
+}: GoalAlignmentIndexInput): number {
+  if (previousGoalId && previousGoalId !== goalId) return 0;
+
+  const alignedTaskCount = microSteps.filter(
+    (step) => step.goalId === goalId || step.isAlignedWithGoal === true
+  ).length;
+  const taskAlignment = microSteps.length > 0
+    ? alignedTaskCount / microSteps.length
+    : 0;
+
+  const completedOnTimeCount = milestones.filter((milestone) => {
+    if (milestone.status !== 'completed') return false;
+    const completedAt = milestone.completedAt || now;
+    return completedAt <= milestone.due;
+  }).length;
+  const milestoneAlignment = milestones.length > 0
+    ? completedOnTimeCount / milestones.length
+    : 0;
+
+  return Math.max(0, Math.min(100, Math.round((milestoneAlignment * 60 + taskAlignment * 40))));
 }
