@@ -223,12 +223,12 @@ export function useAgentSwarm() {
 
     try {
       // Gọi API decompose thật của backend
-      const res = await fetch('/api/v1/agent/decompose', {
+      const res = await fetch('/api/decompose-task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goalTitle: objective,
-          technicalContext: 'Clean Architecture, Domain-Driven Design, Zero Drift',
+          taskTitle: objective,
+          context: { technicalContext: 'Clean Architecture, Domain-Driven Design, Zero Drift' },
         }),
       });
 
@@ -254,23 +254,31 @@ export function useAgentSwarm() {
       }));
 
       // Step 3: Guardrail Agent kiểm tra Drift Score
-      const driftCheckRes = await fetch('/api/v1/agent/guardrail/drift-check', {
+      const driftCheckRes = await fetch('/api/semantic-drift-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          originalGoal: objective,
-          agentOutput: 'Viết Entity và Value Object cho domain authentication, không dính líu DB framework.',
-          circuitBreakerThreshold: 40,
+          coreGoalTitle: objective,
+          tasks: [{
+            id: 'agent-output',
+            title: 'Viết Entity và Value Object cho domain authentication, không dính líu DB framework.',
+          }],
         }),
       });
-      const driftData = driftCheckRes.ok ? await driftCheckRes.json() : { driftScore: 8, status: 'ALLOW' };
+      const driftData = driftCheckRes.ok
+        ? await driftCheckRes.json()
+        : { driftScore: 8, status: 'ALLOW' };
+      const driftScore = typeof driftData.driftScore === 'number'
+        ? driftData.driftScore
+        : Math.max(0, 100 - (driftData.overallAlignmentPercent ?? 100));
+      const guardrailStatus = driftData.status || (driftScore >= 40 ? 'BLOCK' : 'ALLOW');
 
       addExecutionLog({
         sourceAgentId: 'agent_guardrail',
         sourceAgentName: 'Socratic Guardrail',
         actionType: 'DRIFT_CHECK',
-        payloadSummary: `Guardrail Scan hoàn tất: Drift Score = ${driftData.driftScore}%. Trạng thái: ${driftData.status}. Rào chắn cho phép tiếp tục.`,
-        driftScore: driftData.driftScore,
+        payloadSummary: `Guardrail Scan hoàn tất: Drift Score = ${driftScore}%. Trạng thái: ${guardrailStatus}. Rào chắn cho phép tiếp tục.`,
+        driftScore,
         status: 'success',
       });
 

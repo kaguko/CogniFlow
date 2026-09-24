@@ -16,7 +16,7 @@ from crewai import Agent, Task, Crew, Process
 from langchain.tools import tool
 
 SYMFLOWAGE_BASE_URL = "https://your-symflowage-app.run.app/api/v1/agent"
-SYMFLOWAGE_API_KEY = os.getenv("SYMFLOWAGE_M2M_API_KEY", "sym_live_99f8e4b7c12")
+SYMFLOWAGE_API_KEY = os.environ["SYMFLOWAGE_M2M_API_KEY"]
 
 @tool("symflowage_decompose")
 def decompose_goal_to_microsteps(goal_title: str, technical_context: str) -> str:
@@ -74,7 +74,7 @@ class SymFlowAgeAgentMemory:
     title: 'cURL — M2M Guardrail Drift Check (Machine-to-Machine)',
     code: `curl -X POST https://your-symflowage-app.run.app/api/v1/agent/guardrail/drift-check \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer sym_live_99f8e4b7c12" \\
+  -H "Authorization: Bearer $SYMFLOWAGE_M2M_API_KEY" \\
   -d '{
     "originalGoal": "Xây dựng JWT Auth với Redis Token Blacklist",
     "agentOutput": "Tạo bảng User trong MongoDB và cấu hình Firebase OAuth",

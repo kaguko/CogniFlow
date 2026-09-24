@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality, ThinkingLevel, Type } from '@google/genai';
 import { serverConfig } from './serverConfig';
 import { requireAuth, AuthRequest } from './src/middleware/auth.ts';
+import { AgentRequest, requireAgentAuth } from './src/middleware/agentAuth.ts';
 import {
   getUserNotes,
   insertNoteWithEmbedding,
@@ -142,6 +143,100 @@ function persistPredictionBestEffort(
 
   return predictionId;
 }
+
+function getMeaningfulGoalTokens(value: string) {
+  return new Set(
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9\u00c0-\u024f\u1e00-\u1eff]+/gi, ' ')
+      .split(/\s+/)
+      .filter((token) => token.length >= 4)
+  );
+}
+
+async function generateAgentDecomposition(goalTitle: string, technicalContext: unknown) {
+  if (!ai) return buildSmartFallbackDecompositionSteps(goalTitle);
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: `Phân rã mục tiêu của AI Agent thành 3-5 vi bước lập trình 5-15 phút.\nMục tiêu: ${goalTitle}\nNgữ cảnh kỹ thuật: ${JSON.stringify(technicalContext || {})}`,
+      taskComplexity: 'simple',
+      config: {
+        systemInstruction:
+          'Trả về JSON thuần với taskTitle, microSteps và leanAdvice. Mỗi microStep phải có title, durationMinutes <= 15, singleAction, testCriterion, programmerPrinciple và unblockTip.',
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+      },
+    });
+    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+  } catch (error: any) {
+    console.warn('[agent/decompose] fallback:', error?.message || error);
+    return buildSmartFallbackDecompositionSteps(goalTitle);
+  }
+}
+
+app.post(
+  '/api/v1/agent/decompose',
+  createRateLimitMiddleware('ai_simple', 1),
+  requireAgentAuth,
+  async (req: AgentRequest, res: Response) => {
+    const goalTitle = typeof req.body?.goalTitle === 'string' ? req.body.goalTitle.trim() : '';
+    if (!goalTitle) return res.status(400).json({ error: 'goalTitle is required' });
+
+    const requestId = randomUUID();
+    const result = await generateAgentDecomposition(goalTitle, req.body?.technicalContext);
+    return res.json({
+      contractVersion: 'agent.v1',
+      requestId,
+      agentId: req.agentId,
+      goalTitle,
+      ...result,
+    });
+  }
+);
+
+app.post(
+  '/api/v1/agent/guardrail/drift-check',
+  createRateLimitMiddleware('ai_simple', 1),
+  requireAgentAuth,
+  async (req: AgentRequest, res: Response) => {
+    const originalGoal = typeof req.body?.originalGoal === 'string' ? req.body.originalGoal.trim() : '';
+    const agentOutput = typeof req.body?.agentOutput === 'string' ? req.body.agentOutput.trim() : '';
+    if (!originalGoal || !agentOutput) {
+      return res.status(400).json({ error: 'originalGoal and agentOutput are required' });
+    }
+
+    const threshold = Number.isFinite(Number(req.body?.circuitBreakerThreshold))
+      ? Math.min(100, Math.max(1, Number(req.body.circuitBreakerThreshold)))
+      : 40;
+    const semantic = buildSmartFallbackSemanticDrift(originalGoal, [{ id: 'agent-output', title: agentOutput }]);
+    const goalTokens = getMeaningfulGoalTokens(originalGoal);
+    const outputTokens = getMeaningfulGoalTokens(agentOutput);
+    const sharedTokens = [...goalTokens].filter((token) => outputTokens.has(token)).length;
+    const overlapDrift = goalTokens.size > 0 && sharedTokens === 0 ? 60 : 0;
+    const rabbitHoleDrift = semantic.detectedRabbitHoles.length > 0 ? 40 : 0;
+    const driftScore = Math.min(100, Math.max(0, Math.max(overlapDrift, rabbitHoleDrift)));
+    const status = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+
+    return res.json({
+      contractVersion: 'agent.v1',
+      requestId: randomUUID(),
+      agentId: req.agentId,
+      originalGoal,
+      driftScore,
+      threshold,
+      status,
+      decision: status,
+      detectedRabbitHoles: semantic.detectedRabbitHoles,
+      reason:
+        status === 'BLOCK'
+          ? 'Agent output has insufficient goal overlap or contains a known rabbit-hole pattern.'
+          : status === 'WARN'
+          ? 'Agent output needs human review before execution.'
+          : 'Agent output remains aligned with the original goal.',
+    });
+  }
+);
 
 /**
  * POST /api/predict

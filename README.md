@@ -1,6 +1,6 @@
-# SymFlowAge - Contextual Future Prediction & Micro-Step Engine
+# SymFlowAge - Agent Contextual Planner & Guardrail Engine
 
-> **Hệ thống AI dự đoán tương lai theo ngữ cảnh, phân rã vi bước kỹ thuật (5-15 phút), radar nhận diện điểm nghẽn và trợ lý ra quyết định Why-First tích hợp RAG ngữ nghĩa & phân tích xu hướng năng suất Recharts.**
+> **Lớp quản trị ngữ cảnh và điều hướng tác vụ cho AI Agent: phân rã mục tiêu thành vi bước 5-15 phút, kiểm tra Goal Drift/Rabbit Hole, chặn quyết định lệch hướng và cung cấp RAG grounded qua REST API versioned. Giao diện Solo Developer vẫn được giữ như một client tham chiếu.**
 
 [![React](https://img.shields.io/badge/React-19.0-blue.svg)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
@@ -291,6 +291,58 @@ Tự động sinh cột mốc theo Quý và các vi bước khởi động cho m
 
 ### 6. `GET /api/notes`, `POST /api/notes/search` & `POST /api/notes/rag-ask`
 Quản lý ghi chú kỹ thuật, trích xuất embedding pgvector(768) và hỏi đáp RAG grounded.
+
+## 🤖 Agent API — Contextual Planner & Guardrail Engine
+
+SymFlowAge cung cấp một API versioned cho AI Agent, trong khi vẫn giữ nguyên các route legacy phục vụ giao diện web.
+
+### Authentication
+
+Các route `/api/v1/agent/*` yêu cầu API key machine-to-machine ở server:
+
+```bash
+export SYMFLOWAGE_M2M_API_KEY="một-token-dài-và-ngẫu-nhiên"
+```
+
+Gửi key qua header `Authorization: Bearer $SYMFLOWAGE_M2M_API_KEY`. Không nhúng key này vào frontend hoặc commit vào source code.
+
+### `POST /api/v1/agent/decompose`
+
+Phân rã mục tiêu của Agent thành các vi bước 5-15 phút.
+
+```json
+{
+  "goalTitle": "Xây dựng JWT Auth với Redis Token Blacklist",
+  "technicalContext": "Node.js, PostgreSQL, Clean Architecture"
+}
+```
+
+Response có contract ổn định gồm `contractVersion`, `requestId`, `agentId`, `goalTitle`, `microSteps` và `leanAdvice`.
+
+### `POST /api/v1/agent/guardrail/drift-check`
+
+Kiểm tra output của Agent có lệch khỏi mục tiêu hay rơi vào Rabbit Hole không.
+
+```json
+{
+  "originalGoal": "Xây dựng JWT Auth với Redis Token Blacklist",
+  "agentOutput": "Tạo bảng User trong MongoDB và cấu hình Firebase OAuth",
+  "circuitBreakerThreshold": 40
+}
+```
+
+Response trả `driftScore`, `threshold`, `status`/`decision` (`ALLOW`, `WARN` hoặc `BLOCK`), `detectedRabbitHoles` và `reason`. Đây là điểm kiểm soát để Agent dừng hoặc yêu cầu human review trước khi tiếp tục.
+
+Ví dụ:
+
+```bash
+curl -X POST "$APP_URL/api/v1/agent/guardrail/drift-check" \
+  -H "Authorization: Bearer $SYMFLOWAGE_M2M_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"originalGoal":"Ship MVP SaaS","agentOutput":"Dựng Kubernetes multi-region cluster","circuitBreakerThreshold":40}'
+```
+
+Các route `/api/v1/agent/*` là machine-to-machine và không dùng guest fallback. UI browser sử dụng các route legacy cùng domain để không phải đưa M2M secret vào client bundle.
 
 ---
 
