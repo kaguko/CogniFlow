@@ -24,15 +24,26 @@ import {
   Activity,
   Minimize2,
   FastForward,
+  Server,
+  RefreshCw,
+  Clock,
+  ShieldAlert,
+  ArrowDown,
 } from 'lucide-react';
 import { analyzeJsonbQueryPlan } from '../utils/jsonbAnalyzer';
 import {
   simulateLockContention,
   simulateToastTax,
 } from '../utils/postgresPerformanceEngine';
+import {
+  tombstoneCacheEngine,
+  SimulationResult,
+} from '../utils/cacheAsideTombstoneEngine';
 
 export const JsonbIndexStrategyView: React.FC = () => {
-  const [mainSection, setMainSection] = useState<'indexes' | 'locks' | 'toast'>('indexes');
+  const [mainSection, setMainSection] = useState<'indexes' | 'locks' | 'toast' | 'tombstone'>(
+    'tombstone'
+  );
 
   // Tab 1: Index Simulator States
   const [selectedOperator, setSelectedOperator] = useState<'@>' | '?' | '->>' | '->' | 'BETWEEN'>('@>');
@@ -42,7 +53,7 @@ export const JsonbIndexStrategyView: React.FC = () => {
   const [sampleKey, setSampleKey] = useState('priority');
   const [sampleValue, setSampleValue] = useState('high');
   const [hasPartialCondition, setHasPartialCondition] = useState(false);
-  const [activeCodeTab, setActiveCodeTab] = useState<'sql' | 'drizzle'>('sql');
+  const [activeCodeTab, setActiveCodeTab] = useState<'sql' | 'drizzle' | 'redis_lua'>('sql');
 
   // Tab 2: Lock Contention States
   const [lockMode, setLockMode] = useState<'FOR UPDATE' | 'FOR NO KEY UPDATE'>('FOR NO KEY UPDATE');
@@ -54,7 +65,18 @@ export const JsonbIndexStrategyView: React.FC = () => {
   );
   const [docSizeKb, setDocSizeKb] = useState<number>(32);
 
+  // Tab 4: Tombstone Cache Invalidation States
+  const [withTombstone, setWithTombstone] = useState<boolean>(true);
+  const [simulationResult, setSimulationResult] = useState<SimulationResult>(() =>
+    tombstoneCacheEngine.simulateRaceCondition(true)
+  );
+
   const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  const handleRunTombstoneSimulation = (useTombstone: boolean) => {
+    setWithTombstone(useTombstone);
+    setSimulationResult(tombstoneCacheEngine.simulateRaceCondition(useTombstone));
+  };
 
   const analysis = analyzeJsonbQueryPlan(
     selectedOperator,
@@ -101,7 +123,6 @@ CREATE INDEX notes_generated_priority_idx ON notes (extracted_priority);
 -- ==========================================
 -- 3. CHỐNG WRITE BOTTLENECK & DEADLOCK TRONG TASK QUEUE
 -- ==========================================
--- Dùng FOR NO KEY UPDATE SKIP LOCKED để đọc/ghi song song không block Foreign Keys
 SELECT * FROM task_queue 
 WHERE status = 'pending' 
 ORDER BY id ASC 
@@ -150,23 +171,50 @@ export const taskQueue = pgTable('task_queue', {
   createdAt: timestamp('created_at').defaultNow(),
 });`;
 
+  const redisLuaScript = `-- =========================================================================
+-- TRỤ CỘT 4: REDIS LUA SCRIPT CHO TOMBSTONE CACHE-ASIDE (ATOMIC BEST-EFFORT SET)
+-- =========================================================================
+-- Chặn ghi đè dữ liệu cũ nếu Tombstone đang tồn tại (Atomic Check & Set)
+-- KEYS[1] = Cache Key (e.g. "goal:101")
+-- KEYS[2] = Tombstone Key (e.g. "tombstone:goal:101")
+-- ARGV[1] = Payload JSON
+-- ARGV[2] = TTL Seconds (e.g. 60)
+
+local tombstoneExists = redis.call("EXISTS", KEYS[2])
+if tombstoneExists == 1 then
+    -- Đang có Bia Mộ hiệu lực! Bỏ qua ghi đè dữ liệu cũ để tránh Stale Cache Leak
+    return 0
+else
+    -- Không có Tombstone: Cho phép Insert best-effort an toàn
+    redis.call("SETEX", KEYS[1], tonumber(ARGV[2]), ARGV[1])
+    return 1
+end
+
+-- =========================================================================
+-- FLOW 2: INVALIDATION FLOW (KHI WORKER UPDATE POSTGRESQL)
+-- =========================================================================
+-- 1. SET Tombstone (TTL = 10s)
+--    redis.set("tombstone:goal:101", "1", "EX", 10)
+-- 2. DELETE Cache Entry
+--    redis.del("goal:101")`;
+
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/50 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <Database className="w-48 h-48 text-indigo-400" />
         </div>
-        <div className="relative z-10 max-w-3xl space-y-2">
+        <div className="relative z-10 max-w-4xl space-y-2">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
             <Zap className="w-3.5 h-3.5" />
-            <span>PostgreSQL High-Performance Architecture Engine</span>
+            <span>PostgreSQL & Redis High-Performance Distributed Architecture</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            Khắc Phục Thắt Cổ Chai Hiệu Năng PostgreSQL
+            Khắc Phục Thắt Cổ Chai & Trụ Cột 4: Cache-aside & Tombstone Invalidation
           </h1>
           <p className="text-slate-400 text-sm leading-relaxed">
-            Bộ giải pháp kiến trúc giải quyết triệt để 3 vấn đề hiệu năng lớn nhất trong PostgreSQL: Lập chỉ mục JSONB tối ưu, Chống Write Bottlenecks / Lock Contention bằng `FOR NO KEY UPDATE`, và Triệt tiêu Thuế TOAST (The TOAST Tax) bằng Stored Generated Columns.
+            Hệ thống kiến trúc giải quyết triệt để 4 bài toán hiệu năng cốt lõi: <strong>Cache-aside & Tombstone Invalidation</strong> chống Stale Cache Leak trong môi trường bất đồng bộ, <strong>Chỉ mục JSONB</strong> tối ưu, <strong>Chống Write Bottlenecks</strong> (`FOR NO KEY UPDATE`), và <strong>Tránh Thuế TOAST</strong> bằng Stored Generated Columns.
           </p>
         </div>
       </div>
@@ -174,10 +222,22 @@ export const taskQueue = pgTable('task_queue', {
       {/* Main Mode Switcher Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
         <button
+          onClick={() => setMainSection('tombstone')}
+          className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            mainSection === 'tombstone'
+              ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/30 font-bold'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <ShieldAlert className="w-4 h-4 text-amber-300" />
+          <span>Trụ Cột 4: Cache-aside & Tombstone Invalidation</span>
+        </button>
+
+        <button
           onClick={() => setMainSection('indexes')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
             mainSection === 'indexes'
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-bold'
               : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
@@ -189,26 +249,293 @@ export const taskQueue = pgTable('task_queue', {
           onClick={() => setMainSection('locks')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
             mainSection === 'locks'
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-bold'
               : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
           <Lock className="w-4 h-4" />
-          <span>2. Chống Write Bottlenecks & Lock Contention</span>
+          <span>2. Chống Write Bottlenecks (FOR NO KEY UPDATE)</span>
         </button>
 
         <button
           onClick={() => setMainSection('toast')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
             mainSection === 'toast'
-              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-bold'
               : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
           <Minimize2 className="w-4 h-4" />
-          <span>3. Tránh Thuế TOAST (The TOAST Tax)</span>
+          <span>3. Tránh Thuế TOAST (Generated Columns)</span>
         </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION 4: TRỤ CỘT 4 - CACHE-ASIDE & TOMBSTONE INVALIDATION */}
+      {/* ========================================================================= */}
+      {mainSection === 'tombstone' && (
+        <div className="space-y-6">
+          {/* TITLE & OVERVIEW */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-amber-400" />
+                  Trụ cột 4: Cache-aside & Tombstone Invalidation
+                </h2>
+                <p className="text-xs text-slate-400 mt-1">
+                  Mô hình tuần tự (Sequence Architecture) bảo vệ bộ nhớ đệm phân tán Redis trước nguy cơ Async Race Condition.
+                </p>
+              </div>
+
+              {/* Simulation Mode Toggle Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleRunTombstoneSimulation(true)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    withTombstone
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30'
+                      : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-emerald-300" />
+                  <span>Có Tombstone Shield (Bảo Vệ)</span>
+                </button>
+
+                <button
+                  onClick={() => handleRunTombstoneSimulation(false)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                    !withTombstone
+                      ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30'
+                      : 'bg-slate-950 border border-slate-800 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Flame className="w-4 h-4 text-rose-300" />
+                  <span>Không Dùng Tombstone (Lỗ Hổng)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* VISUAL SEQUENCE DIAGRAM REPRODUCTION */}
+            <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 sm:p-6 overflow-x-auto space-y-6">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 pb-2 flex items-center justify-between">
+                <span>Kiến Trúc Luồng Tuần Tự (Sequence Diagram Flow)</span>
+                <span className="text-[11px] text-amber-400 font-mono">FastAPI / Node.js ⟷ Redis ⟷ PostgreSQL</span>
+              </div>
+
+              {/* 3 Actor Columns Headers */}
+              <div className="grid grid-cols-3 gap-4 text-center min-w-[650px]">
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-indigo-300 shadow-md flex items-center justify-center gap-2">
+                  <Server className="w-4 h-4 text-indigo-400" />
+                  <span>FastAPI Worker (UC)</span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-rose-300 shadow-md flex items-center justify-center gap-2">
+                  <Database className="w-4 h-4 text-rose-400" />
+                  <span>Redis Cache</span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-cyan-300 shadow-md flex items-center justify-center gap-2">
+                  <HardDrive className="w-4 h-4 text-cyan-400" />
+                  <span>PostgreSQL DB</span>
+                </div>
+              </div>
+
+              {/* Visual Lifelines and Arrows Container */}
+              <div className="space-y-4 min-w-[650px] relative py-2">
+                {/* FLOW 1: READ-THROUGH FLOW */}
+                <div className="space-y-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/70 relative">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
+                    <span>Flow 1: Read-through Flow</span>
+                  </div>
+
+                  {/* Step 1: get(key) */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">get(key)</div>
+                    <div className="w-1/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-indigo-500 relative flex items-center justify-end">
+                        <ArrowRight className="w-4 h-4 text-indigo-400 -mr-1" />
+                      </div>
+                    </div>
+                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">Tra cứu nhanh trong RAM</div>
+                  </div>
+
+                  {/* Step 2: Miss */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận thông báo Miss</div>
+                    <div className="w-1/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 border-t-2 border-dashed border-slate-500 relative flex items-center justify-start">
+                        <span className="absolute inset-x-0 -top-4 text-center font-mono text-[11px] text-amber-300 font-semibold">
+                          Miss
+                        </span>
+                      </div>
+                    </div>
+                    <div className="w-1/3 pl-4 font-mono text-slate-400">Key không tồn tại</div>
+                  </div>
+
+                  {/* Step 3: SELECT */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">SELECT</div>
+                    <div className="w-2/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-cyan-500 relative flex items-center justify-end">
+                        <ArrowRight className="w-4 h-4 text-cyan-400 -mr-1" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 4: data */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận dữ liệu từ DB</div>
+                    <div className="w-2/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-cyan-400/80 relative flex items-center justify-start">
+                        <span className="absolute inset-x-0 -top-4 text-center font-mono text-[11px] text-cyan-300 font-semibold">
+                          data
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 5: Insert best-effort */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">Insert best-effort</div>
+                    <div className="w-1/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-emerald-500 relative flex items-center justify-end">
+                        <ArrowRight className="w-4 h-4 text-emerald-400 -mr-1" />
+                      </div>
+                    </div>
+                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">
+                      {withTombstone ? (
+                        <span className="text-emerald-300 font-semibold">
+                          ✓ Kiểm tra Tombstone trước khi SET
+                        </span>
+                      ) : (
+                        <span className="text-rose-400 font-semibold">
+                          ⚠ SET trực tiếp (Nguy cơ Stale Leak!)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* FLOW 2: INVALIDATION FLOW */}
+                <div className="space-y-3 bg-amber-950/20 p-4 rounded-xl border-2 border-amber-500/60 relative shadow-lg">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    <span>Flow 2: Invalidation Flow</span>
+                  </div>
+
+                  {/* Step 1: UPDATE DB */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 font-mono text-amber-300 font-bold">UPDATE</div>
+                    <div className="w-2/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-amber-500 relative flex items-center justify-end">
+                        <ArrowRight className="w-4 h-4 text-amber-400 -mr-1" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 2: SET Tombstone (TTL) - NỔI BẬT VIỀN CAM NHƯ TRONG ẢNH */}
+                  <div className="p-2.5 rounded-lg bg-amber-950/40 border-2 border-amber-500 shadow-md">
+                    <div className="flex items-center text-xs">
+                      <div className="w-1/3 text-right pr-4 font-mono text-amber-200 font-bold flex items-center justify-end gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+                        <span>SET Tombstone (TTL)</span>
+                      </div>
+                      <div className="w-1/3 flex items-center justify-center">
+                        <div className="w-full h-1 bg-amber-500 relative flex items-center justify-end shadow-sm">
+                          <ArrowRight className="w-5 h-5 text-amber-400 -mr-1.5" />
+                        </div>
+                      </div>
+                      <div className="w-1/3 pl-4 text-amber-300 text-[11px] font-semibold">
+                        Đặt Bia Mộ tạm thời (TTL 5–15s)
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Step 3: DELETE Cache Entry */}
+                  <div className="flex items-center text-xs">
+                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300 font-medium">
+                      DELETE Cache Entry
+                    </div>
+                    <div className="w-1/3 flex items-center justify-center">
+                      <div className="w-full h-0.5 bg-amber-500/80 relative flex items-center justify-end">
+                        <ArrowRight className="w-4 h-4 text-amber-400 -mr-1" />
+                      </div>
+                    </div>
+                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">Xóa key hiện tại trên Redis</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* TECHNICAL RATIONALE REPRODUCTION BOX */}
+              <div className="p-4 sm:p-5 rounded-xl bg-slate-900 border-2 border-indigo-500/80 shadow-md space-y-2">
+                <div className="flex items-center gap-2 text-indigo-300 text-sm font-bold uppercase tracking-wide">
+                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                  <span>Technical Rationale: Tại sao cần "Bia mộ" (Tombstone)?</span>
+                </div>
+                <p className="text-sm text-slate-200 leading-relaxed font-sans">
+                  <strong>Ngăn chặn Race-condition trong môi trường bất đồng bộ.</strong> Khi một luồng đọc (chậm) lấy dữ liệu cũ từ DB và định ghi đè lên Redis sau khi luồng ghi đã cập nhật DB. <strong>Tombstone chặn các thao tác ghi dữ liệu cũ lên cache mới.</strong>
+                </p>
+              </div>
+            </div>
+
+            {/* LIVE RACE-CONDITION SIMULATION TIMELINE */}
+            <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Kết Quả Mô Phỏng Luồng Bất Đồng Bộ Thực Tế (Execution Log)
+                  </h3>
+                </div>
+                <div className="font-mono text-xs text-slate-400">
+                  Trạng thái: {withTombstone ? (
+                    <span className="text-emerald-400 font-bold">✓ BẢO VỆ BẰNG BIA MỘ</span>
+                  ) : (
+                    <span className="text-rose-400 font-bold">❌ KHÔNG BẢO VỆ (RACE RISK)</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Step by step timeline */}
+              <div className="space-y-2.5">
+                {simulationResult.events.map((evt) => (
+                  <div
+                    key={evt.step}
+                    className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 transition-all ${
+                      evt.isBlockedByTombstone
+                        ? 'bg-emerald-950/50 border-emerald-500 text-emerald-200'
+                        : evt.stateChange.includes('THẢM HỌA')
+                        ? 'bg-rose-950/60 border-rose-500 text-rose-200'
+                        : 'bg-slate-900 border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="px-2 py-0.5 rounded bg-black/50 font-mono text-[11px] text-amber-400 shrink-0">
+                        T={evt.timestampOffsetMs}ms
+                      </span>
+                      <span className="font-semibold text-white">[{evt.actor}]</span>
+                      <span className="font-mono text-slate-300">{evt.action}</span>
+                    </div>
+
+                    <div className="text-[11px] sm:text-right font-medium text-slate-400">
+                      {evt.stateChange}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Conclusion Banner */}
+              <div
+                className={`p-4 rounded-xl border text-xs font-semibold leading-relaxed ${
+                  simulationResult.isCacheStale
+                    ? 'bg-rose-950/40 border-rose-500/80 text-rose-200'
+                    : 'bg-emerald-950/40 border-emerald-500/80 text-emerald-200'
+                }`}
+              >
+                {simulationResult.conclusion}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* SECTION 1: CHIẾN LƯỢC CHỈ MỤC JSONB */}
@@ -554,9 +881,7 @@ export const taskQueue = pgTable('task_queue', {
       {/* ========================================================================= */}
       {mainSection === 'locks' && (
         <div className="space-y-6">
-          {/* Visual Architecture Comparison */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Problem Box */}
             <div className="bg-slate-900 border border-rose-900/60 rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2 text-rose-400 font-bold text-sm uppercase tracking-wider">
                 <XCircle className="w-5 h-5" />
@@ -570,7 +895,6 @@ export const taskQueue = pgTable('task_queue', {
               </div>
             </div>
 
-            {/* Solution Box */}
             <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
                 <CheckCircle2 className="w-5 h-5" />
@@ -585,7 +909,6 @@ export const taskQueue = pgTable('task_queue', {
             </div>
           </div>
 
-          {/* Interactive Concurrent Throughput Simulator */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
@@ -622,7 +945,6 @@ export const taskQueue = pgTable('task_queue', {
               </div>
             </div>
 
-            {/* Sliders & Stats */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
               <div className="lg:col-span-5 space-y-4">
                 <div className="space-y-2">
@@ -660,7 +982,6 @@ export const taskQueue = pgTable('task_queue', {
                 </div>
               </div>
 
-              {/* Benchmark Results */}
               <div className="lg:col-span-7 space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
@@ -715,7 +1036,6 @@ export const taskQueue = pgTable('task_queue', {
       {/* ========================================================================= */}
       {mainSection === 'toast' && (
         <div className="space-y-6">
-          {/* Visual Architecture Comparison */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-slate-900 border border-rose-900/60 rounded-xl p-5 space-y-4">
               <div className="flex items-center gap-2 text-rose-400 font-bold text-sm uppercase tracking-wider">
@@ -744,7 +1064,6 @@ export const taskQueue = pgTable('task_queue', {
             </div>
           </div>
 
-          {/* Interactive Benchmark Calculator */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
               <div>
@@ -815,7 +1134,6 @@ export const taskQueue = pgTable('task_queue', {
                 </div>
               </div>
 
-              {/* Stats Output */}
               <div className="lg:col-span-7 space-y-4">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="bg-slate-950 p-3.5 rounded-lg border border-slate-800">
@@ -861,18 +1179,28 @@ export const taskQueue = pgTable('task_queue', {
         </div>
       )}
 
-      {/* CODE GENERATOR (SQL DDL & DRIZZLE ORM) */}
+      {/* CODE GENERATOR (SQL DDL, DRIZZLE ORM & REDIS LUA SCRIPT) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg space-y-0">
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Code2 className="w-4 h-4 text-indigo-400" />
             <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-              Mã Nguồn Cài Đặt Hoàn Chỉnh (SQL DDL & Drizzle ORM)
+              Mã Nguồn Cài Đặt (SQL DDL, Drizzle ORM & Redis Lua Script)
             </h2>
           </div>
 
           <div className="flex items-center gap-2">
             <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 flex items-center gap-1 text-xs">
+              <button
+                onClick={() => setActiveCodeTab('redis_lua')}
+                className={`px-3 py-1 rounded transition-colors ${
+                  activeCodeTab === 'redis_lua'
+                    ? 'bg-amber-600 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Redis Lua (Tombstone)
+              </button>
               <button
                 onClick={() => setActiveCodeTab('sql')}
                 className={`px-3 py-1 rounded transition-colors ${
@@ -891,12 +1219,21 @@ export const taskQueue = pgTable('task_queue', {
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                Drizzle ORM (TypeScript)
+                Drizzle ORM
               </button>
             </div>
 
             <button
-              onClick={() => handleCopy(activeCodeTab === 'sql' ? sqlDDL : drizzleSchema, 'fullCode')}
+              onClick={() =>
+                handleCopy(
+                  activeCodeTab === 'redis_lua'
+                    ? redisLuaScript
+                    : activeCodeTab === 'sql'
+                    ? sqlDDL
+                    : drizzleSchema,
+                  'fullCode'
+                )
+              }
               className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition-colors"
             >
               {copiedType === 'fullCode' ? (
@@ -904,13 +1241,19 @@ export const taskQueue = pgTable('task_queue', {
               ) : (
                 <Copy className="w-3.5 h-3.5" />
               )}
-              <span>{copiedType === 'fullCode' ? 'Đã chép' : 'Sao chép tất cả'}</span>
+              <span>{copiedType === 'fullCode' ? 'Đã chép' : 'Sao chép mã nguồn'}</span>
             </button>
           </div>
         </div>
 
         <div className="p-4 bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto">
-          <pre>{activeCodeTab === 'sql' ? sqlDDL : drizzleSchema}</pre>
+          <pre>
+            {activeCodeTab === 'redis_lua'
+              ? redisLuaScript
+              : activeCodeTab === 'sql'
+              ? sqlDDL
+              : drizzleSchema}
+          </pre>
         </div>
       </div>
     </div>
