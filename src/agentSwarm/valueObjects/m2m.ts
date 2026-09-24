@@ -1,11 +1,27 @@
 export interface M2MCodeSnippet {
-  language: 'python' | 'curl' | 'typescript';
-  framework: 'langchain' | 'crewai' | 'autogen' | 'raw_api';
+  language: 'python' | 'curl' | 'typescript' | 'json';
+  framework: 'langchain' | 'crewai' | 'autogen' | 'raw_api' | 'mcp';
   title: string;
   code: string;
 }
 
 export const M2M_INTEGRATION_SNIPPETS: M2MCodeSnippet[] = [
+  {
+    language: 'json',
+    framework: 'mcp',
+    title: 'Model Context Protocol (MCP) — Config cho Cursor / Windsurf / Claude Desktop',
+    code: `{
+  "mcpServers": {
+    "symflowage": {
+      "url": "https://your-symflowage-app.run.app/api/mcp/sse",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Bearer $SYMFLOWAGE_M2M_API_KEY"
+      }
+    }
+  }
+}`,
+  },
   {
     language: 'python',
     framework: 'crewai',

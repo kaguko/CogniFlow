@@ -344,6 +344,34 @@ curl -X POST "$APP_URL/api/v1/agent/guardrail/drift-check" \
 
 Các route `/api/v1/agent/*` là machine-to-machine và không dùng guest fallback. UI browser sử dụng các route legacy cùng domain để không phải đưa M2M secret vào client bundle.
 
+### 🔌 Model Context Protocol (MCP) Server Integration
+
+SymFlowAge hỗ trợ chuẩn **Model Context Protocol (MCP)** qua hai giao thức transport:
+1. **Direct HTTP JSON-RPC** (`POST /api/mcp`)
+2. **Server-Sent Events (SSE)** (`GET /api/mcp/sse` & `POST /api/mcp/messages`)
+
+#### Các MCP Tools có sẵn:
+* `symflowage_decompose_task`: Phân rã mục tiêu thành các vi bước $\le 15$ phút.
+* `symflowage_semantic_drift_analysis`: Quét phát hiện bẫy kỹ thuật và trôi dạt mục tiêu.
+* `symflowage_socratic_decision`: Phản biện Why-First kiến trúc theo Nguyên lý gốc.
+* `symflowage_predict_timelines`: Dự báo 3 kịch bản tương lai (Optimal, Drift, Crash).
+* `symflowage_guardrail_drift_check`: Rào chắn nhanh trả về kết quả ALLOW / WARN / BLOCK.
+
+#### Cấu hình cho Cursor / Windsurf / Claude Desktop (`claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "symflowage": {
+      "url": "https://your-symflowage-app.run.app/api/mcp/sse",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Bearer $SYMFLOWAGE_M2M_API_KEY"
+      }
+    }
+  }
+}
+```
+
 ---
 
 ## 🛡️ Cơ Chế Phòng Vệ Gemini Resilience Engine

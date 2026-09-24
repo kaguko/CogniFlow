@@ -24,12 +24,8 @@ import {
   buildSmartFallbackDecompositionSteps,
   buildSmartFallbackSemanticDrift,
 } from './src/lib/geminiResilience.ts';
-import {
-  rateLimiter,
-  smartCache,
-  classifyTaskComplexity,
-  MODEL_TIERS,
-} from './src/utils/smartCacheRateLimitEngine.ts';
+import { rateLimiter, smartCache, classifyTaskComplexity, MODEL_TIERS } from './src/utils/smartCacheRateLimitEngine.ts';
+import { mountMcpRoutes } from './src/mcp/mcpServer.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,6 +34,9 @@ const app = express();
 const PORT = serverConfig.port;
 
 app.use(express.json({ limit: '10mb' }));
+
+// Mount Model Context Protocol (MCP) Server endpoints (/api/mcp, /api/mcp/sse)
+mountMcpRoutes(app);
 
 // Helper to extract client identifier (IP / Auth Token)
 function getClientIdentifier(req: Request): string {
