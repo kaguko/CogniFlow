@@ -12,6 +12,7 @@ import {
   Telescope,
   Target,
   Database,
+  Zap,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -83,10 +84,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'jsonb_index',
-      label: 'Chiến Lược JSONB Index',
-      icon: Layers,
-      badge: 'Postgres',
-      description: 'GIN ops vs B-Tree & Anti-Pattern',
+      label: 'Hiệu Năng PostgreSQL Lab',
+      icon: Zap,
+      badge: 'Chuyên sâu',
+      description: 'Chỉ mục JSONB, FOR NO KEY UPDATE & Thuế TOAST',
     },
     {
       id: 'behavioral',

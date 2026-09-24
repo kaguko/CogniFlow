@@ -40,7 +40,7 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// Notes & Documents table with pgvector semantic embeddings & 4 JSONB Indexing Strategies
+// Notes & Documents table with pgvector semantic embeddings, 4 JSONB Indexing Strategies, & Stored Generated Column
 export const notes = pgTable(
   'notes',
   {
@@ -58,6 +58,10 @@ export const notes = pgTable(
       status?: string;
       metrics?: { difficulty?: number; impact?: number };
     }>().default({}),
+    // PostgreSQL Stored Generated Column to avoid TOAST Tax on JSONB > 8KB
+    extractedPriority: text('extracted_priority').generatedAlwaysAs(
+      sql`metadata->>'priority'`
+    ),
     isActive: boolean('is_active').notNull().default(true),
     embedding: pgVector('embedding'),
     createdAt: timestamp('created_at').defaultNow(),
@@ -82,6 +86,27 @@ export const notes = pgTable(
     activeNotesGinIdx: index('notes_active_metadata_partial_idx')
       .using('gin', sql`${table.metadata} jsonb_path_ops`)
       .where(sql`${table.isActive} = true`),
+      
+    // Index on Stored Generated Column (Avoids TOAST decompression CPU overhead entirely)
+    generatedPriorityIdx: index('notes_generated_priority_idx').on(table.extractedPriority),
+  })
+);
+
+// High-Throughput Task Queue Table (Demonstrating FOR NO KEY UPDATE pattern)
+export const taskQueue = pgTable(
+  'task_queue',
+  {
+    id: serial('id').primaryKey(),
+    noteId: serial('note_id').references(() => notes.id),
+    taskPayload: jsonb('task_payload').default({}),
+    status: text('status').notNull().default('pending'), // 'pending' | 'processing' | 'completed' | 'failed'
+    workerId: text('worker_id'),
+    lockedAt: timestamp('locked_at'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => ({
+    statusIdx: index('task_queue_status_idx').on(table.status),
   })
 );
 
