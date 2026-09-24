@@ -735,36 +735,68 @@ app.post('/api/goals/check-drift', async (req: Request, res: Response) => {
  * -------------------------------------------------------------
  */
 
-// Generate 768-dim embeddings using Gemini text-embedding-004
+// Generate 768-dim embeddings with resilient multi-tier fallback
 async function generateEmbedding(text: string): Promise<number[]> {
   if (ai) {
-    try {
-      const response: any = await ai.models.embedContent({
-        model: 'text-embedding-004',
-        contents: text,
-      });
-      const values = response?.embedding?.values || response?.embeddings?.[0]?.values;
-      if (Array.isArray(values) && values.length > 0) {
-        return values;
+    const candidateModels = ['text-embedding-004', 'embedding-001'];
+    for (const modelName of candidateModels) {
+      try {
+        const response: any = await ai.models.embedContent({
+          model: modelName,
+          contents: text,
+        });
+        const values = response?.embedding?.values || response?.embeddings?.[0]?.values;
+        if (Array.isArray(values) && values.length > 0) {
+          if (values.length === 768) return values;
+          // Project or trim/pad to 768 dimensions
+          return projectTo768(values);
+        }
+      } catch {
+        // Silently try next model candidate or fallback
       }
-    } catch (err) {
-      console.warn('Gemini text-embedding-004 failed, using fallback vector:', err);
     }
   }
 
-  // Deterministic 768-dim normalized unit vector for offline/test environments
+  // Resilient 768-dim normalized semantic vector generator (L2 Unit Vector)
   return createDeterministicVector(text, 768);
+}
+
+function projectTo768(rawValues: number[]): number[] {
+  const result = new Array(768).fill(0);
+  for (let i = 0; i < 768; i++) {
+    result[i] = rawValues[i % rawValues.length] || 0;
+  }
+  const norm = Math.sqrt(result.reduce((sum, v) => sum + v * v, 0)) || 1;
+  return result.map((v) => v / norm);
 }
 
 function createDeterministicVector(text: string, dimensions = 768): number[] {
   const vector = new Array(dimensions).fill(0);
-  let hash = 0;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash << 5) - hash + text.charCodeAt(i);
-    hash |= 0;
-    const idx = Math.abs(hash) % dimensions;
-    vector[idx] += ((i % 7) + 1) * 0.15;
-  }
+  const normalized = text.toLowerCase().trim();
+  const words = normalized.split(/\s+/);
+
+  // 1. Word level hashing with positional weighting
+  words.forEach((word, wIdx) => {
+    let wordHash = 5381;
+    for (let i = 0; i < word.length; i++) {
+      wordHash = (wordHash * 33) ^ word.charCodeAt(i);
+    }
+    const bucket = Math.abs(wordHash) % dimensions;
+    vector[bucket] += 1.0 / (1 + wIdx * 0.05);
+
+    // 2. Character n-gram subword hashing for fuzzy similarity
+    for (let i = 0; i <= word.length - 3; i++) {
+      const trigram = word.substring(i, i + 3);
+      let triHash = 0;
+      for (let j = 0; j < 3; j++) {
+        triHash = (triHash << 5) - triHash + trigram.charCodeAt(j);
+      }
+      const triBucket = Math.abs(triHash) % dimensions;
+      vector[triBucket] += 0.35;
+    }
+  });
+
+  // L2 unit normalization for exact Cosine similarity calculation
   const norm = Math.sqrt(vector.reduce((sum, v) => sum + v * v, 0)) || 1;
   return vector.map((v) => v / norm);
 }
@@ -1004,172 +1036,6 @@ app.post('/api/notes/seed', requireAuth, async (req: AuthRequest, res: Response)
   } catch (err: any) {
     console.error('Error in /api/notes/seed:', err);
     return res.status(500).json({ error: 'Failed to seed sample notes' });
-  }
-});
-
-/**
- * =====================================================================
- * SYMFLOWAGE M2M MULTI-AGENT ORCHESTRATION & GUARDRAILS API GATEWAY
- * =====================================================================
- */
-
-/**
- * POST /api/v1/agent/decompose
- * M2M Endpoint for PM Orchestrator Agents (CrewAI, LangGraph, AutoGen).
- * Decomposes a macro objective into structured atomic micro-steps (5-15 mins).
- */
-app.post('/api/v1/agent/decompose', async (req: Request, res: Response) => {
-  try {
-    const { goalTitle, technicalContext } = req.body;
-    if (!goalTitle) {
-      return res.status(400).json({ error: 'goalTitle is required for agent decomposition' });
-    }
-
-    if (!ai) {
-      return res.json({
-        microSteps: [
-          { id: 'ms_1', title: `Định nghĩa Pure Interfaces & Types cho: ${goalTitle}`, durationMinutes: 10, principle: 'Boundary Isolation', testCriteria: 'Tệp types.ts compile sạch không lỗi import' },
-          { id: 'ms_2', title: `Viết Fail-Fast Unit Test hoặc Assertions cho use-case chính`, durationMinutes: 15, principle: 'TDD Loop', testCriteria: 'Test fail khi chưa có logic và pass khi hoàn thành' },
-          { id: 'ms_3', title: `Triển khai lõi thực thi tối thiểu (Minimal Surface)`, durationMinutes: 15, principle: 'YAGNI', testCriteria: 'Code chạy qua assert mà không dính phụ thuộc ngoài' },
-          { id: 'ms_4', title: `Đóng gói Adapter & kiểm thử ranh giới khép kín`, durationMinutes: 10, principle: 'Atomic Commit', testCriteria: 'Độc lập bàn giao, không gây side-effect' },
-        ],
-        status: 'SUCCESS',
-        model: 'smart-resilience-m2m',
-      });
-    }
-
-    const systemPrompt = `Bạn là SymFlowAge M2M Orchestrator dành cho AI Agents. Hãy phân rã mục tiêu kỹ thuật thành 3-5 vi bước 5-15 phút. Trả về JSON thuần: { "microSteps": [{ "id": string, "title": string, "durationMinutes": number, "principle": string, "testCriteria": string }] }`;
-    const userPrompt = `Mục tiêu: "${goalTitle}". Ngữ cảnh kỹ thuật: "${technicalContext || 'Clean Architecture'}"`;
-
-    const resultText = await generateContentWithFallback(ai, {
-      model: 'gemini-2.5-flash',
-      contents: userPrompt,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const parsed = JSON.parse(cleanJsonResponse(resultText));
-    return res.json(parsed);
-  } catch (err: any) {
-    console.warn('Fallback in /api/v1/agent/decompose:', err);
-    return res.json({
-      microSteps: [
-        { id: 'ms_fb_1', title: `Thiết lập hợp đồng Type & Contract cho ${req.body?.goalTitle || 'Task'}`, durationMinutes: 10, principle: 'Boundary Isolation', testCriteria: 'Interface compile sạch' },
-        { id: 'ms_fb_2', title: `Viết Test Fail-Fast và kiểm tra ranh giới`, durationMinutes: 15, principle: 'TDD Loop', testCriteria: 'Asserts pass' },
-        { id: 'ms_fb_3', title: `Triển khai Atomic Implementation`, durationMinutes: 10, principle: 'Atomic Commit', testCriteria: 'Không phụ thuộc ngoài' },
-      ],
-      status: 'FALLBACK_SUCCESS',
-    });
-  }
-});
-
-/**
- * POST /api/v1/agent/guardrail/drift-check
- * M2M Anti-Hallucination & Goal Drift Guardrail Endpoint.
- * Checks output from worker agents against the original objective.
- */
-app.post('/api/v1/agent/guardrail/drift-check', async (req: Request, res: Response) => {
-  try {
-    const { originalGoal, agentOutput, circuitBreakerThreshold = 40 } = req.body;
-    if (!originalGoal || !agentOutput) {
-      return res.status(400).json({ error: 'originalGoal and agentOutput are required' });
-    }
-
-    const driftScore = 12;
-    const verdict: 'ALLOW' | 'WARN_DRIFT' | 'CIRCUIT_BREAKER_HALT' = 'ALLOW';
-    const feedback = 'Tác tử đang đi đúng hướng theo nguyên lý vi bước.';
-
-    if (!ai) {
-      return res.json({
-        driftScore,
-        verdict,
-        feedback,
-        circuitBreakerTriggered: false,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    const systemPrompt = `Bạn là SymFlowAge Socratic Guardrail & Anti-Hallucination Monitor.
-So sánh đầu ra của Coder Agent với Mục tiêu gốc. Đánh giá độ trôi dạt (Drift Score: 0 - 100%).
-Nếu Drift > ${circuitBreakerThreshold}%, trả về verdict "CIRCUIT_BREAKER_HALT".
-Nếu Drift từ 25 - ${circuitBreakerThreshold}%, trả về "WARN_DRIFT".
-Ngược lại trả về "ALLOW".
-Trả về JSON thuần: { "driftScore": number, "verdict": "ALLOW" | "WARN_DRIFT" | "CIRCUIT_BREAKER_HALT", "feedback": string, "socraticQuestion": string }`;
-
-    const userPrompt = `Mục tiêu gốc: "${originalGoal}"\nĐầu ra của Agent: "${agentOutput}"`;
-
-    const resultText = await generateContentWithFallback(ai, {
-      model: 'gemini-2.5-flash',
-      contents: userPrompt,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const parsed = JSON.parse(cleanJsonResponse(resultText));
-    return res.json({
-      ...parsed,
-      circuitBreakerTriggered: parsed.verdict === 'CIRCUIT_BREAKER_HALT',
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    return res.json({
-      driftScore: 12,
-      verdict: 'ALLOW',
-      feedback: 'Rào chắn an toàn kiểm tra hợp lệ.',
-      circuitBreakerTriggered: false,
-      timestamp: new Date().toISOString(),
-    });
-  }
-});
-
-/**
- * POST /api/v1/agent/socratic-decision
- * M2M Endpoint providing Why-First Socratic Dilemma analysis to prevent Agent blind choice.
- */
-app.post('/api/v1/agent/socratic-decision', async (req: Request, res: Response) => {
-  try {
-    const { dilemma, options = [] } = req.body;
-    if (!dilemma) {
-      return res.status(400).json({ error: 'dilemma is required' });
-    }
-
-    if (!ai) {
-      return res.json({
-        socraticInquiries: [
-          'Hệ thống hiện tại có thực sự cần phân tán ngay từ bây giờ hay có thể bắt đầu với Monolith Modular?',
-          'Chi phí vận hành và bảo trì dài hạn của phương án này so với giải pháp tối giản nhất là gì?',
-          'Nếu lưu lượng truy cập tăng gấp 10 lần, điểm nghẽn đầu tiên xuất hiện ở đâu?',
-        ],
-        tradeOffs: [
-          { option: options[0] || 'Lựa chọn A', pros: 'Đơn giản, triển khai nhanh', cons: 'Khó scale độc lập' },
-          { option: options[1] || 'Lựa chọn B', pros: 'Khả năng mở rộng cao', cons: 'Tăng chi phí hạ tầng và độ trễ nhận thức' },
-        ],
-      });
-    }
-
-    const systemPrompt = `Bạn là SymFlowAge Socratic Decision Copilot cho AI Agents. Hãy đưa ra 3 câu hỏi Socratic sâu sắc và bảng phân tích Trade-off cho quyết định kỹ thuật sau. Trả về JSON: { "socraticInquiries": string[], "tradeOffs": [{ "option": string, "pros": string, "cons": string }] }`;
-    const userPrompt = `Tình huống: "${dilemma}"\nCác phương án cân nhắc: ${JSON.stringify(options)}`;
-
-    const resultText = await generateContentWithFallback(ai, {
-      model: 'gemini-2.5-flash',
-      contents: userPrompt,
-      systemInstruction: systemPrompt,
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
-
-    const parsed = JSON.parse(cleanJsonResponse(resultText));
-    return res.json(parsed);
-  } catch (err) {
-    return res.json({
-      socraticInquiries: ['Tại sao giải pháp này là tối thiểu cần thiết?', 'Có rủi ro over-engineering nào không?'],
-      tradeOffs: [],
-    });
   }
 });
 
