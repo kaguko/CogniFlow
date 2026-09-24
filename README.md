@@ -66,19 +66,19 @@ SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho
 
 ---
 
-### 🚀 Cách 1: Tích Hợp AI Editors (Cursor / Windsurf / Claude Desktop) qua MCP Protocol
+### 🚀 Cách 1: Tích Hợp AI Editors (Cursor / Windsurf / Claude Desktop / Cline / Roo Code) qua MCP Protocol
 
-Định cấu hình file `claude_desktop_config.json` hoặc phần Cấu hình MCP Server trong Cursor / Windsurf:
+Định cấu hình file `claude_desktop_config.json` hoặc phần Cấu hình MCP Server (`mcpServers`) trong Cursor / Windsurf / Cline / Roo Code:
 
 #### Cấu hình kết nối SSE Stream (Khuyến nghị cho Real-time Guardrail Alert):
 ```json
 {
   "mcpServers": {
     "symflowage": {
-      "url": "https://your-symflowage-app.run.app/api/mcp/sse",
+      "url": "http://localhost:3000/api/mcp/sse",
       "transport": "sse",
       "headers": {
-        "Authorization": "Bearer SYMFLOWAGE_M2M_API_KEY"
+        "Authorization": "Bearer test_m2m_secret_key_123"
       }
     }
   }
@@ -92,6 +92,50 @@ SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho
 - `symflowage_configure_circuit_breaker`: Thiết lập ngưỡng Drift Score và cấu hình Outbound Webhook.
 - `symflowage_subscribe_alerts`: Đăng ký lắng nghe sự kiện ngắt mạch thời gian thực.
 - `symflowage_get_accuracy_score`: Truy vấn tỷ lệ dự báo chính xác và chỉ số backtesting 30 ngày.
+
+---
+
+### 🧪 Hướng Dẫn Các Bước Chạy Test Thực Tế (E2E Manual Testing Guide)
+
+#### **Bước 1: Khởi chạy SymFlowAge Server**
+
+1. Cấu hình file `.env` trong SymFlowAge với API key từ Google AI Studio:
+```env
+GEMINI_API_KEY=your_gemini_api_key_from_ai_studio
+SYMFLOWAGE_M2M_API_KEY=test_m2m_secret_key_123
+```
+
+2. Chạy dự án: `npm run dev` (mặc định server lắng nghe tại `http://localhost:3000`).
+
+#### **Bước 2: Kết nối Agent trong VS Code qua MCP**
+
+Nếu bạn dùng **Cline**, **Roo Code**, **Cursor AI**, hoặc **Claude Desktop** trong VS Code, mở phần cài đặt MCP (`mcpServers`) và thêm cấu hình kết nối tới SymFlowAge:
+
+```json
+{
+  "mcpServers": {
+    "symflowage": {
+      "url": "http://localhost:3000/api/mcp/sse",
+      "transport": "sse",
+      "headers": {
+        "Authorization": "Bearer test_m2m_secret_key_123"
+      }
+    }
+  }
+}
+```
+
+#### **Bước 3: Thực hiện các Kịch bản Kiểm thử (Test Cases)**
+
+* **Test Case 1: Phân rã công việc đúng hướng (`ALLOW`)**
+  * **Yêu cầu Agent trên VS Code**: *"Hãy lập kế hoạch triển khai tính năng xác thực người dùng bằng OAuth2 cho mục tiêu Launch MVP."*
+  * **Kỳ vọng**: Agent trên VS Code sẽ tự động gọi tool `symflowage_decompose_task` và `symflowage_guardrail_drift_check`, nhận phản hồi `ALLOW` kèm danh sách các **Vi bước 5–15 phút** để bắt đầu viết code.
+* **Test Case 2: Kiểm thử Ngắt mạch Circuit Breaker (`BLOCK`)**
+  * **Yêu cầu Agent trên VS Code**: *"Hãy tự viết lại một bộ UI Component Framework và thư viện CSS riêng từ đầu thay vì dùng Tailwind."*
+  * **Kỳ vọng**: SymFlowAge phát hiện bẫy `reinventing_wheel` & `over_engineering`, đẩy Drift Score lên cao, trả về quyết định `BLOCK` và bắn sự kiện SSE `HALT_EXECUTION`. Agent trên VS Code sẽ ngay lập tức **dừng việc sinh code** và thông báo lý do bị ngắt mạch cho bạn.
+* **Test Case 3: Đóng vòng lặp Feedback Loop**
+  * Sau khi hoàn thành hoặc hủy bỏ công việc, Agent sẽ tự động gọi tool `symflowage_report_outcome` để gửi báo cáo `SUCCESS` hoặc `DRIFT`, giúp hệ thống tính toán **Accuracy Score** thời gian thực.
+
 
 ---
 
