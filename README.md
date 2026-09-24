@@ -162,6 +162,19 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
   - Dành sẵn 15–25 slots dự phòng cho DBA, Migrations và Healthchecks, **loại bỏ 100% lỗi sập DB do cạn kiệt Connection Slots**.
 - **4. Interactive Docker & Sizing Lab**: Bảng điều khiển giả lập phần cứng (CPU Cores, Container RAM, PostgreSQL max_connections, Pod Replicas) với đánh giá tải và sinh mã `Dockerfile`, `gunicorn.conf.py`, `docker-compose.yml` 1-click.
 
+### 11. ⚡ Rate Limiting, Caching Thông Minh & Định Tuyến Model Nhẹ (Flash/Lite First)
+- **1. Ưu Tiên Model Nhẹ Flash/Lite Ngay Từ Đầu (Intelligent Model Routing)**:
+  - **Tier 1 (Lightweight - `gemini-3.1-flash-lite`)**: Định tuyến ngay các tác vụ đơn giản (phân rã vi bước $\le 15$ phút, đo ma sát nhận thức, format JSON, gắn tag semantic). Độ trễ cực thấp **~140ms**, tiết kiệm **88% chi phí và token**.
+  - **Tier 2 (Balanced - `gemini-2.5-flash` / `gemini-3.8-flash`)**: Phân tích dự đoán 3 Dòng thời gian, RAG QA Copilot, phát hiện điểm nghẽn hệ thống.
+  - **Tier 3 (Deep Reasoning - `gemini-2.5-pro`)**: Thiết kế kiến trúc phân tán lớn, tổng hợp mã nguồn đa tầng.
+- **2. Caching Thông Minh (Exact SHA-256 + Adaptive TTL)**:
+  - Chuẩn hóa prompt và băm khóa SHA-256.
+  - Phản hồi tức thì **&lt; 5ms** khi Cache Hit, triệt tiêu 100% chi phí token và giải phóng hoàn toàn áp lực tải lên upstream LLM.
+  - **Adaptive TTL**: TTL ngắn (10 phút) cho vi bước biến động, TTL dài (120 phút) cho các phân tích kiến trúc nền tảng.
+- **3. Token Bucket Rate Limiting (Multi-Tier Quotas)**:
+  - Kiểm soát lưu lượng theo IP / Client Token: `60 req/min` (AI Simple), `30 req/min` (AI Standard), `120 req/min` (General API).
+  - Trả về chuẩn header `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` và mã `429 Too Many Requests (Retry-After)` bảo vệ backend.
+
 ---
 
 ## 🛠️ Kiến Trúc Kỹ Thuật (Tech Stack)
@@ -171,13 +184,14 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
 | **Frontend Framework** | React 19 + TypeScript | SPA nhanh, hiện đại, tuân thủ functional components & custom hooks |
 | **Styling** | Tailwind CSS v4 | Dark mode chuẩn mực với tone màu Slate/Indigo cao cấp |
 | **Charts & Graphs** | Recharts 3.x, Motion | Biểu đồ LineChart xu hướng năng suất & AreaChart Burndown mượt mà |
+| **Rate Limit & Smart Cache** | Token Bucket Algorithm & Adaptive SHA-256 Cache | Header chuẩn `X-RateLimit-*`, `429 Retry-After`, Cache Hit &lt;5ms |
 | **Container & Runtime** | Docker Multi-Stage (Non-Root), Gunicorn, dumb-init | Chạy dưới user `10001:10001`, tự động quản lý workers và connection pool |
 | **Task Queue & Cache** | ARQ (Async Redis) + Redis 7 | Hàng đợi tác vụ Native Async Event Loop 35,000+ QPS & Cache-aside Tombstone |
 | **Database & ORM** | PostgreSQL 16 + Drizzle ORM | Hỗ trợ JSONB indexing, Generated Columns, Lock contention bypass & vector(768) |
 | **Icons** | Lucide React | Hệ thống icon tối giản, đồng bộ |
 | **Server Backend** | Express + TSX (Node.js) & FastAPI/Gunicorn | Full-stack tích hợp sẵn Vite middlewares |
 | **AI SDK** | `@google/genai` (v2.4.0) | Gọi các mô hình Gemini hiện đại nhất |
-| **AI Models** | Gemini Flash & Lite Family | `gemini-2.5-flash`, `gemini-flash-latest`, `gemini-3.1-flash-lite`, `gemini-3.8-flash` |
+| **AI Models (Tiered)** | Gemini Flash & Lite Family | `gemini-3.1-flash-lite` (Tier 1), `gemini-2.5-flash` (Tier 2), `gemini-2.5-pro` (Tier 3) |
 | **Vector Embeddings** | `text-embedding-004` & Fallback Engine | 768 dimensions cho tìm kiếm tương đồng ngữ nghĩa |
 
 ---

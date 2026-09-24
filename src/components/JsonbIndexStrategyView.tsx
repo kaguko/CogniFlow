@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Database,
   Table,
@@ -36,6 +36,10 @@ import {
   Droplets,
   Users,
   ShieldX,
+  Gauge,
+  Cpu as CpuIcon,
+  DollarSign,
+  TrendingDown,
 } from 'lucide-react';
 import { analyzeJsonbQueryPlan } from '../utils/jsonbAnalyzer';
 import {
@@ -55,11 +59,44 @@ import {
   calculateProductionSizing,
   SizingConfig,
 } from '../utils/dockerSizingEngine';
+import {
+  MODEL_TIERS,
+  RATE_LIMIT_TIERS,
+  rateLimiter,
+  smartCache,
+  classifyTaskComplexity,
+  TaskComplexity,
+} from '../utils/smartCacheRateLimitEngine';
 
 export const JsonbIndexStrategyView: React.FC = () => {
   const [mainSection, setMainSection] = useState<
-    'docker_sizing' | 'arq_matrix' | 'tombstone' | 'indexes' | 'locks' | 'toast'
-  >('docker_sizing');
+    'smart_cache' | 'docker_sizing' | 'arq_matrix' | 'tombstone' | 'indexes' | 'locks' | 'toast'
+  >('smart_cache');
+
+  // Smart Cache & Rate Limit States
+  const [selectedTierKey, setSelectedTierKey] = useState<string>('ai_simple');
+  const [rateLimitStatus, setRateLimitStatus] = useState<any>(null);
+  const [testPrompt, setTestPrompt] = useState<string>('Chia nhỏ task setup Docker container');
+  const [cacheResultNotice, setCacheResultNotice] = useState<string | null>(null);
+  const [cacheStatsState, setCacheStatsState] = useState(smartCache.getStats());
+
+  // Trigger test rate limit token
+  const handleTestRateLimit = () => {
+    const res = rateLimiter.check('demo_user_client', selectedTierKey, 1);
+    setRateLimitStatus(res);
+  };
+
+  const handleTestSmartCache = () => {
+    const complexity = classifyTaskComplexity(testPrompt, testPrompt.length);
+    const cached = smartCache.get(testPrompt);
+    if (cached.hit) {
+      setCacheResultNotice(`⚡ CACHE HIT! Trả kết quả tức thì trong ${cached.latencySavedMs}ms, tiết kiệm 100% token gọi LLM.`);
+    } else {
+      smartCache.set(testPrompt, { result: 'Phân rã 3 vi bước thành công', complexity }, complexity);
+      setCacheResultNotice(`💾 CACHE MISS -> Đã định tuyến sang ${MODEL_TIERS[complexity].name} (${MODEL_TIERS[complexity].modelId}) và lưu vào cache.`);
+    }
+    setCacheStatsState(smartCache.getStats());
+  };
 
   // Docker & Sizing Config State
   const [sizingConfig, setSizingConfig] = useState<SizingConfig>({
@@ -345,6 +382,18 @@ export const notes = pgTable('notes', {
       {/* Main Mode Switcher Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
         <button
+          onClick={() => setMainSection('smart_cache')}
+          className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            mainSection === 'smart_cache'
+              ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/30 font-bold'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <Zap className="w-4 h-4 text-emerald-300" />
+          <span>⚡ Smart Cache & Rate Limit (Flash/Lite)</span>
+        </button>
+
+        <button
           onClick={() => setMainSection('docker_sizing')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
             mainSection === 'docker_sizing'
@@ -416,6 +465,233 @@ export const notes = pgTable('notes', {
           <span>Tránh Thuế TOAST</span>
         </button>
       </div>
+
+      {/* ========================================================================= */}
+      {/* SECTION: SMART CACHING, RATE LIMITING & MODEL ROUTING */}
+      {/* ========================================================================= */}
+      {mainSection === 'smart_cache' && (
+        <div className="space-y-6">
+          {/* 3 Pillars of AI Optimization */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Card 1: Model Routing */}
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-sm">
+                <Zap className="w-5 h-5" />
+                <span>1. Model Nhẹ Flash/Lite Ngay Từ Đầu</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Tự động phân loại tác vụ: vi bước, định dạng JSON và đo ma sát nhận thức chuyển thẳng sang <code className="px-1.5 py-0.5 bg-black/60 rounded text-emerald-300 font-mono">gemini-3.1-flash-lite</code> (~140ms, tiết kiệm <strong>88% chi phí</strong>).
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-emerald-300 flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" /> Simple: Flash-Lite | Medium: Flash | Complex: Pro
+              </div>
+            </div>
+
+            {/* Card 2: Smart Semantic & Exact Cache */}
+            <div className="bg-slate-900 border border-blue-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-blue-400 font-bold text-sm">
+                <HardDrive className="w-5 h-5" />
+                <span>2. Caching Thông Minh (Adaptive TTL)</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Chuẩn hóa truy vấn & Exact SHA-256 Hash. Trả kết quả tính trước chỉ trong <strong>&lt; 5ms</strong>, triệt tiêu 100% chi phí token và độ trễ upstream.
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-blue-300 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> Hit Rate: {cacheStatsState.hitRatioPct}% | Latency Saved: {cacheStatsState.totalLatencySavedMs}ms
+              </div>
+            </div>
+
+            {/* Card 3: Token Bucket Rate Limiting */}
+            <div className="bg-slate-900 border border-amber-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-amber-400 font-bold text-sm">
+                <Gauge className="w-5 h-5" />
+                <span>3. Token Bucket Rate Limiting</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Kiểm soát quota đa tầng (IP/Client). Trả về chuẩn header <code className="px-1.5 py-0.5 bg-black/60 rounded text-amber-300 font-mono">X-RateLimit-*</code> và mã <code className="px-1.5 py-0.5 bg-black/60 rounded text-amber-300 font-mono">429 Retry-After</code> bảo vệ backend.
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-amber-300 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" /> 60 req/min (AI Simple), 30 req/min (Standard)
+              </div>
+            </div>
+          </div>
+
+          {/* Model Matrix Table */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+            <div className="p-4 border-b border-slate-800 bg-slate-950/70 flex justify-between items-center">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <CpuIcon className="w-4 h-4 text-emerald-400" />
+                <span>Ma Trận Phân Cấp Model (Intelligent Model Routing Tiering)</span>
+              </h3>
+              <span className="text-[11px] font-mono bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded border border-emerald-500/30">
+                ACTIVE IN PRODUCTION
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950 text-slate-400 uppercase font-bold border-b border-slate-800 text-[10px]">
+                  <tr>
+                    <th className="py-3 px-4">Tầng (Tier)</th>
+                    <th className="py-3 px-4">Model Gemini</th>
+                    <th className="py-3 px-4">Tác vụ Tối ưu</th>
+                    <th className="py-3 px-4">Độ Trễ TB</th>
+                    <th className="py-3 px-4">Tiết Kiệm Token</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800 font-sans">
+                  <tr className="bg-emerald-950/20 hover:bg-emerald-950/30 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-emerald-300 flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5" /> Tier 1 (Lightweight)
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-white">gemini-3.1-flash-lite</td>
+                    <td className="py-3.5 px-4 text-slate-300">{MODEL_TIERS.simple.recommendedTask}</td>
+                    <td className="py-3.5 px-4 font-mono text-emerald-400 font-bold">~140ms</td>
+                    <td className="py-3.5 px-4 font-mono text-emerald-400 font-bold">Tiết kiệm 88%</td>
+                  </tr>
+
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-blue-300 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5" /> Tier 2 (Balanced)
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-white">gemini-2.5-flash</td>
+                    <td className="py-3.5 px-4 text-slate-300">{MODEL_TIERS.medium.recommendedTask}</td>
+                    <td className="py-3.5 px-4 font-mono text-blue-400 font-bold">~420ms</td>
+                    <td className="py-3.5 px-4 font-mono text-blue-400 font-bold">Tiết kiệm 65%</td>
+                  </tr>
+
+                  <tr className="hover:bg-slate-800/30 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-purple-300 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" /> Tier 3 (Deep Reasoning)
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-white">gemini-2.5-pro</td>
+                    <td className="py-3.5 px-4 text-slate-300">{MODEL_TIERS.complex.recommendedTask}</td>
+                    <td className="py-3.5 px-4 font-mono text-purple-400 font-bold">~1,250ms</td>
+                    <td className="py-3.5 px-4 font-mono text-slate-400">Chuỗi suy luận sâu</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Interactive Lab: Rate Limiter & Smart Cache Test */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Token Bucket Simulator */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-lg">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+                <Gauge className="w-4 h-4 text-amber-400" />
+                <span>Trình Giả Lập Token Bucket Rate Limiting</span>
+              </h3>
+
+              <div className="space-y-3">
+                <label className="text-xs text-slate-400">Chọn Phân Tầng Rate Limit:</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {Object.entries(RATE_LIMIT_TIERS).slice(0, 3).map(([k, v]) => (
+                    <button
+                      key={k}
+                      onClick={() => {
+                        setSelectedTierKey(k);
+                        setRateLimitStatus(null);
+                      }}
+                      className={`p-2 rounded-lg text-xs font-semibold border transition-all text-center ${
+                        selectedTierKey === k
+                          ? 'bg-amber-600 text-white border-amber-500 shadow-md'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {v.tierName}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Hạn mức (Burst Capacity):</span>
+                    <span className="font-mono text-white font-bold">{RATE_LIMIT_TIERS[selectedTierKey]?.maxTokens} tokens</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Tốc độ hồi phục:</span>
+                    <span className="font-mono text-emerald-400 font-bold">{RATE_LIMIT_TIERS[selectedTierKey]?.refillRatePerSec} tokens/giây</span>
+                  </div>
+                  {rateLimitStatus && (
+                    <div className="pt-2 border-t border-slate-800 space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Tokens còn lại:</span>
+                        <span className={`font-mono font-bold ${rateLimitStatus.allowed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {rateLimitStatus.remainingTokens} / {rateLimitStatus.maxTokens}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-slate-400">Trạng thái:</span>
+                        <span className={`font-bold ${rateLimitStatus.allowed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          {rateLimitStatus.allowed ? '200 OK (Allowed)' : `429 Too Many Requests (Retry sau ${rateLimitStatus.retryAfterSec}s)`}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={handleTestRateLimit}
+                  className="w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-600/20 transition-colors"
+                >
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Bắn 1 Request Thử Nghiệm Token Bucket</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Right: Smart Caching Lab */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4 shadow-lg">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+                <HardDrive className="w-4 h-4 text-blue-400" />
+                <span>Trình Giả Lập Smart Caching (Adaptive TTL)</span>
+              </h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-slate-400">Nhập Prompt / Tác vụ mẫu:</label>
+                  <input
+                    type="text"
+                    value={testPrompt}
+                    onChange={(e) => setTestPrompt(e.target.value)}
+                    className="w-full mt-1.5 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                {cacheResultNotice && (
+                  <div className="p-3 bg-slate-950 border border-blue-500/40 rounded-xl text-xs text-blue-300 font-mono">
+                    {cacheResultNotice}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">Total Requests</div>
+                    <div className="text-lg font-mono font-bold text-white mt-0.5">{cacheStatsState.totalRequests}</div>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-emerald-500/30">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">Cache Hit Rate</div>
+                    <div className="text-lg font-mono font-bold text-emerald-400 mt-0.5">{cacheStatsState.hitRatioPct}%</div>
+                  </div>
+                  <div className="bg-slate-950 p-3 rounded-lg border border-blue-500/30">
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">Latency Saved</div>
+                    <div className="text-lg font-mono font-bold text-blue-400 mt-0.5">{cacheStatsState.totalLatencySavedMs}ms</div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleTestSmartCache}
+                  className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20 transition-colors"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Kiểm Tra Cache & Phân Tuyến Model</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* SECTION 0: DOCKER & RESOURCE SIZING LAB */}

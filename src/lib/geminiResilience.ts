@@ -1,17 +1,30 @@
 import { GoogleGenAI } from '@google/genai';
 
-export const DEFAULT_TEXT_MODELS = [
+export const LIGHTWEIGHT_MODELS = [
+  'gemini-3.1-flash-lite',
   'gemini-2.5-flash',
   'gemini-flash-latest',
-  'gemini-3.1-flash-lite',
-  'gemini-3.8-flash',
 ];
+
+export const BALANCED_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-3.8-flash',
+  'gemini-3.1-flash-lite',
+];
+
+export const DEEP_REASONING_MODELS = [
+  'gemini-2.5-pro',
+  'gemini-2.5-flash',
+];
+
+export const DEFAULT_TEXT_MODELS = BALANCED_MODELS;
 
 export interface GenerateWithFallbackOptions {
   contents: any;
   config?: any;
   models?: string[];
   maxRetriesPerModel?: number;
+  taskComplexity?: 'simple' | 'medium' | 'complex';
 }
 
 /**
@@ -23,7 +36,14 @@ export async function generateContentWithFallback(
   ai: GoogleGenAI,
   options: GenerateWithFallbackOptions
 ) {
-  const models = options.models && options.models.length > 0 ? options.models : DEFAULT_TEXT_MODELS;
+  const defaultForComplexity =
+    options.taskComplexity === 'simple'
+      ? LIGHTWEIGHT_MODELS
+      : options.taskComplexity === 'complex'
+      ? DEEP_REASONING_MODELS
+      : BALANCED_MODELS;
+
+  const models = options.models && options.models.length > 0 ? options.models : defaultForComplexity;
   let lastError: any = null;
 
   for (let i = 0; i < models.length; i++) {

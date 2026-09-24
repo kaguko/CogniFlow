@@ -18,6 +18,12 @@ import {
   buildSmartFallbackDecomposition,
   buildSmartFallbackGoalPlan,
 } from './src/lib/geminiResilience.ts';
+import {
+  rateLimiter,
+  smartCache,
+  classifyTaskComplexity,
+  MODEL_TIERS,
+} from './src/utils/smartCacheRateLimitEngine.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +32,39 @@ const app = express();
 const PORT = serverConfig.port;
 
 app.use(express.json({ limit: '10mb' }));
+
+// Helper to extract client identifier (IP / Auth Token)
+function getClientIdentifier(req: Request): string {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string') {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.ip || req.socket.remoteAddress || 'client_default';
+}
+
+// Rate Limiting Express Middleware Factory
+function createRateLimitMiddleware(tierKey: string = 'general_api', cost: number = 1) {
+  return (req: Request, res: Response, next: Function) => {
+    const clientId = getClientIdentifier(req);
+    const result = rateLimiter.check(clientId, tierKey, cost);
+
+    res.setHeader('X-RateLimit-Limit', result.maxTokens);
+    res.setHeader('X-RateLimit-Remaining', result.remainingTokens);
+    res.setHeader('X-RateLimit-Reset', result.resetTimeSec);
+
+    if (!result.allowed) {
+      res.setHeader('Retry-After', result.retryAfterSec);
+      return res.status(429).json({
+        error: 'Too Many Requests (Rate Limit Exceeded)',
+        message: `Bạn đã gửi yêu cầu quá nhanh. Vui lòng thử lại sau ${result.retryAfterSec} giây.`,
+        retryAfterSec: result.retryAfterSec,
+        tier: tierKey,
+      });
+    }
+
+    next();
+  };
+}
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -59,16 +98,28 @@ function cleanJsonResponse(text: string): string {
  * Projects 3 future timelines, decomposes work into atomic programmer micro-steps,
  * and identifies critical bottlenecks and risk factors.
  */
-app.post('/api/predict', async (req: Request, res: Response) => {
+app.post('/api/predict', createRateLimitMiddleware('ai_standard', 1), async (req: Request, res: Response) => {
   try {
     const { context } = req.body;
     if (!context || !context.title) {
       return res.status(400).json({ error: 'Context with title is required' });
     }
 
+    // 1. SMART CACHE CHECK
+    const cacheKey = `predict:${context.title}:${context.energyLevel || ''}:${context.domain || ''}:${(context.behavioralFlags || []).join(',')}`;
+    const cached = smartCache.get(cacheKey);
+    if (cached.hit && cached.data) {
+      res.setHeader('X-Cache-Status', 'HIT');
+      res.setHeader('X-Cache-Latency-Saved-Ms', cached.latencySavedMs || 0);
+      return res.json(cached.data);
+    }
+    res.setHeader('X-Cache-Status', 'MISS');
+
     if (!ai) {
       console.warn('[api/predict] GEMINI_API_KEY not configured, returning smart synthesized prediction');
-      return res.json(buildSmartFallbackPrediction(context));
+      const fallback = buildSmartFallbackPrediction(context);
+      smartCache.set(cacheKey, fallback, 'medium');
+      return res.json(fallback);
     }
 
     const systemInstruction = `
@@ -197,13 +248,16 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
 
       const text = response.text || '';
       const parsed = JSON.parse(cleanJsonResponse(text));
+      smartCache.set(cacheKey, parsed, 'medium');
       return res.json(parsed);
     } catch (aiErr: any) {
       console.warn(
         '[api/predict] Upstream Gemini model experienced high demand (503) or transient spike. Seamlessly serving smart synthesized forecast:',
         aiErr?.message || aiErr
       );
-      return res.json(buildSmartFallbackPrediction(context));
+      const fallback = buildSmartFallbackPrediction(context);
+      smartCache.set(cacheKey, fallback, 'medium');
+      return res.json(fallback);
     }
   } catch (err: any) {
     console.error('Error in /api/predict:', err);
@@ -1037,6 +1091,33 @@ app.post('/api/notes/seed', requireAuth, async (req: AuthRequest, res: Response)
     console.error('Error in /api/notes/seed:', err);
     return res.status(500).json({ error: 'Failed to seed sample notes' });
   }
+});
+
+/**
+ * GET /api/smart-cache-stats
+ * Real-time telemetry for Smart Caching, Rate Limiting, and Model Routing
+ */
+app.get('/api/smart-cache-stats', (_req: Request, res: Response) => {
+  const stats = smartCache.getStats();
+  const entries = smartCache.getEntries().slice(0, 10);
+  res.json({
+    stats,
+    entries,
+    modelTiers: MODEL_TIERS,
+    timestamp: Date.now(),
+  });
+});
+
+/**
+ * POST /api/rate-limit/test
+ * Test endpoint to simulate token consumption
+ */
+app.post('/api/rate-limit/test', createRateLimitMiddleware('ai_simple', 1), (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Yêu cầu được chấp thuận qua Token Bucket Rate Limiter!',
+    timestamp: Date.now(),
+  });
 });
 
 // Setup Vite in Dev or Static in Production
