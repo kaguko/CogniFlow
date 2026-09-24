@@ -32,6 +32,10 @@ import {
   Workflow,
   Sparkles,
   Terminal,
+  Box,
+  Droplets,
+  Users,
+  ShieldX,
 } from 'lucide-react';
 import { analyzeJsonbQueryPlan } from '../utils/jsonbAnalyzer';
 import {
@@ -47,11 +51,24 @@ import {
   arqEngine,
   ArqJobState,
 } from '../utils/taskQueueMatrixEngine';
+import {
+  calculateProductionSizing,
+  SizingConfig,
+} from '../utils/dockerSizingEngine';
 
 export const JsonbIndexStrategyView: React.FC = () => {
-  const [mainSection, setMainSection] = useState<'arq_matrix' | 'tombstone' | 'indexes' | 'locks' | 'toast'>(
-    'arq_matrix'
-  );
+  const [mainSection, setMainSection] = useState<
+    'docker_sizing' | 'arq_matrix' | 'tombstone' | 'indexes' | 'locks' | 'toast'
+  >('docker_sizing');
+
+  // Docker & Sizing Config State
+  const [sizingConfig, setSizingConfig] = useState<SizingConfig>({
+    cpuCores: 2,
+    containerRamMb: 1024,
+    postgresMaxConnections: 100,
+    containerReplicas: 1,
+    hasArqWorker: true,
+  });
 
   // Tab 1: Index Simulator States
   const [selectedOperator, setSelectedOperator] = useState<'@>' | '?' | '->>' | '->' | 'BETWEEN'>('@>');
@@ -61,7 +78,9 @@ export const JsonbIndexStrategyView: React.FC = () => {
   const [sampleKey, setSampleKey] = useState('priority');
   const [sampleValue, setSampleValue] = useState('high');
   const [hasPartialCondition, setHasPartialCondition] = useState(false);
-  const [activeCodeTab, setActiveCodeTab] = useState<'arq_python' | 'redis_lua' | 'sql' | 'drizzle'>('arq_python');
+  const [activeCodeTab, setActiveCodeTab] = useState<
+    'dockerfile' | 'gunicorn_conf' | 'docker_compose' | 'arq_python' | 'redis_lua' | 'sql' | 'drizzle'
+  >('dockerfile');
 
   // Tab 2: Lock Contention States
   const [lockMode, setLockMode] = useState<'FOR UPDATE' | 'FOR NO KEY UPDATE'>('FOR NO KEY UPDATE');
@@ -87,6 +106,8 @@ export const JsonbIndexStrategyView: React.FC = () => {
   );
 
   const [copiedType, setCopiedType] = useState<string | null>(null);
+
+  const sizingResult = calculateProductionSizing(sizingConfig);
 
   const handleRunTombstoneSimulation = (useTombstone: boolean) => {
     setWithTombstone(useTombstone);
@@ -121,128 +142,202 @@ export const JsonbIndexStrategyView: React.FC = () => {
     setTimeout(() => setCopiedType(null), 2000);
   };
 
+  const dockerfileCode = `# =========================================================================
+# Multi-Stage Production Dockerfile (Security Hardened & Non-Root)
+# =========================================================================
+
+# --- STAGE 1: Builder ---
+FROM python:3.11-slim-bookworm AS builder
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    build-essential libpq-dev curl && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN python -m venv /opt/venv && \\
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip setuptools wheel && \\
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+# --- STAGE 2: Runner (Bọc code an toàn, Non-Root User 10001:10001) ---
+FROM python:3.11-slim-bookworm AS runner
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \\
+    libpq5 dumb-init curl && rm -rf /var/lib/apt/lists/*
+
+# BẢO MẬT: Tạo Non-Root User & Group (Không chạy Root tránh bị hack leo thang)
+RUN groupadd -g 10001 appgroup && \\
+    useradd -u 10001 -g appgroup -s /bin/bash -m -d /home/appuser appuser
+
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH" \\
+    PYTHONUNBUFFERED=1 \\
+    PYTHONDONTWRITEBYTECODE=1
+
+COPY --chown=appuser:appgroup . /app
+USER appuser:appgroup
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \\
+    CMD curl -f http://localhost:8000/api/health || exit 1
+
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "server:app"]`;
+
+  const gunicornConfCode = `# =========================================================================
+# Gunicorn Configuration File (gunicorn.conf.py)
+# =========================================================================
+import multiprocessing
+import os
+
+# TÍNH TOÁN VỪA ĐỦ ĐẦU BẾP (WORKERS): (2 x CPU Cores) + 1
+cpu_cores = os.cpu_count() or 1
+workers_calculated = (2 * cpu_cores) + 1
+workers = int(os.getenv("WEB_CONCURRENCY", workers_calculated))
+
+worker_class = "uvicorn.workers.UvicornWorker"
+bind = os.getenv("BIND", "0.0.0.0:8000")
+backlog = 2048
+
+# Tự động restart worker sau 10,000 requests để chống rò rỉ bộ nhớ (Memory Leak)
+max_requests = int(os.getenv("MAX_REQUESTS", 10000))
+max_requests_jitter = int(os.getenv("MAX_REQUESTS_JITTER", 2000))
+
+timeout = int(os.getenv("TIMEOUT", 30))
+graceful_timeout = int(os.getenv("GRACEFUL_TIMEOUT", 30))
+keepalive = 5
+preload_app = True
+
+accesslog = "-"
+errorlog = "-"
+loglevel = os.getenv("LOG_LEVEL", "info")`;
+
+  const dockerComposeCode = `version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: symflowage-api
+    restart: unless-stopped
+    user: "10001:10001" # Non-Root Execution
+    ports:
+      - "8000:8000"
+    environment:
+      - BIND=0.0.0.0:8000
+      - WEB_CONCURRENCY=${sizingResult.recommendedWorkers} # (2 x ${sizingConfig.cpuCores} Cores) + 1 = ${sizingResult.recommendedWorkers} Workers
+      - DB_POOL_SIZE=${sizingResult.safePoolSizePerWorker} # Chia vòi nước an toàn mỗi Worker
+      - DB_MAX_OVERFLOW=${sizingResult.safeMaxOverflowPerWorker}
+      - DATABASE_URL=postgresql://symflow_user:symflow_secret@postgres:5432/symflowage_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '${sizingConfig.cpuCores}.0'
+          memory: ${sizingConfig.containerRamMb}M
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: symflowage-postgres
+    restart: unless-stopped
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=${sizingConfig.postgresMaxConnections}"
+      - "-c"
+      - "shared_buffers=256MB"
+    environment:
+      - POSTGRES_USER=symflow_user
+      - POSTGRES_PASSWORD=symflow_secret
+      - POSTGRES_DB=symflowage_db
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U symflow_user -d symflowage_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: symflowage-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5`;
+
   const arqPythonCode = `# =========================================================================
 # ARQ (Async Redis Task Queue) - Chuẩn Production High-Concurrency I/O
 # =========================================================================
-# pip install arq redis uvloop
-
 import asyncio
-from typing import Any
 from arq import create_pool
 from arq.connections import RedisSettings
 
-# 1. Định nghĩa các tác vụ Async I/O Native
 async def send_webhook(ctx: dict, url: str, payload: dict) -> dict:
-    # Native Async Event Loop: Xử lý non-blocking 35,000+ QPS
-    # Không tốn RAM threadpool hay multi-process nặng nề
     async with ctx['session'].post(url, json=payload) as resp:
         return {'status': resp.status, 'url': url}
 
-async def generate_batch_embedding(ctx: dict, text_chunk: str) -> list[float]:
-    # Async I/O LLM Pipeline
-    await asyncio.sleep(0.02) # Async I/O call
-    return [0.05] * 768
-
-# 2. Cấu hình Worker Settings
-async def startup(ctx: dict):
-    import aiohttp
-    ctx['session'] = aiohttp.ClientSession()
-
-async def shutdown(ctx: dict):
-    await ctx['session'].close()
-
 class WorkerSettings:
-    functions = [send_webhook, generate_batch_embedding]
-    on_startup = startup
-    on_shutdown = shutdown
+    functions = [send_webhook]
     redis_settings = RedisSettings(host='127.0.0.1', port=6379)
-    max_jobs = 1000 # Tải cực lớn trên 1 process đơn
+    max_jobs = 1000`;
 
-# 3. Enqueue từ FastAPI / Web Server
-# pool = await create_pool(RedisSettings())
-# await pool.enqueue_job('send_webhook', 'https://api.symflowage.com/webhook', {'event': 'node_created'})`;
-
-  const redisLuaScript = `-- =========================================================================
--- TRỤ CỘT 4: REDIS LUA SCRIPT CHO TOMBSTONE CACHE-ASIDE (ATOMIC BEST-EFFORT SET)
--- =========================================================================
--- Chặn ghi đè dữ liệu cũ nếu Tombstone đang tồn tại (Atomic Check & Set)
--- KEYS[1] = Cache Key (e.g. "goal:101")
--- KEYS[2] = Tombstone Key (e.g. "tombstone:goal:101")
--- ARGV[1] = Payload JSON
--- ARGV[2] = TTL Seconds (e.g. 60)
-
+  const redisLuaScript = `-- TRỤ CỘT 4: REDIS LUA SCRIPT CHO TOMBSTONE CACHE-ASIDE
 local tombstoneExists = redis.call("EXISTS", KEYS[2])
 if tombstoneExists == 1 then
-    -- Đang có Bia Mộ hiệu lực! Bỏ qua ghi đè dữ liệu cũ để tránh Stale Cache Leak
-    return 0
+    return 0 -- Có Bia Mộ hiệu lực -> Chặn ghi đè dữ liệu cũ
 else
-    -- Không có Tombstone: Cho phép Insert best-effort an toàn
     redis.call("SETEX", KEYS[1], tonumber(ARGV[2]), ARGV[1])
     return 1
-end
+end`;
 
--- =========================================================================
--- FLOW 2: INVALIDATION FLOW (KHI WORKER UPDATE POSTGRESQL)
--- =========================================================================
--- 1. SET Tombstone (TTL = 10s)
---    redis.set("tombstone:goal:101", "1", "EX", 10)
--- 2. DELETE Cache Entry
---    redis.del("goal:101")`;
-
-  const sqlDDL = `-- ==========================================
--- 1. CHIẾN LƯỢC CHỈ MỤC JSONB (POSTGRESQL)
--- ==========================================
-CREATE INDEX notes_metadata_gin_ops_idx ON notes USING gin (metadata);
+  const sqlDDL = `-- TỐI ƯU POSTGRESQL DDL
 CREATE INDEX notes_metadata_gin_path_idx ON notes USING gin (metadata jsonb_path_ops);
-CREATE INDEX notes_metadata_priority_btree_idx ON notes ((metadata->>'priority'));
-
--- ==========================================
--- 2. TRÁNH THUẾ TOAST (STORED GENERATED COLUMNS)
--- ==========================================
 ALTER TABLE notes ADD COLUMN extracted_priority text GENERATED ALWAYS AS (metadata->>'priority') STORED;
 CREATE INDEX notes_generated_priority_idx ON notes (extracted_priority);
-
--- ==========================================
--- 3. CHỐNG WRITE BOTTLENECK & DEADLOCK
--- ==========================================
 SELECT * FROM task_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1 FOR NO KEY UPDATE SKIP LOCKED;`;
 
-  const drizzleSchema = `import { pgTable, serial, text, boolean, timestamp, jsonb, index } from 'drizzle-orm/pg-core';
+  const drizzleSchema = `import { pgTable, serial, text, jsonb, index } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const notes = pgTable('notes', {
   id: serial('id').primaryKey(),
-  userUid: text('user_uid').notNull(),
   title: text('title').notNull(),
   metadata: jsonb('metadata').default({}),
-  extractedPriority: text('extracted_priority').generatedAlwaysAs(
-    sql\`metadata->>'priority'\`
-  ),
-  isActive: boolean('is_active').notNull().default(true),
-  createdAt: timestamp('created_at').defaultNow(),
+  extractedPriority: text('extracted_priority').generatedAlwaysAs(sql\`metadata->>'priority'\`),
 }, (table) => ({
   ginPathOpsIdx: index('notes_meta_gin_path_idx').using('gin', sql\`\${table.metadata} jsonb_path_ops\`),
-  priorityBtreeIdx: index('notes_meta_priority_btree_idx').on(sql\`(\${table.metadata}->>'priority')\`),
   generatedPriorityIdx: index('notes_gen_priority_idx').on(table.extractedPriority),
 }));`;
 
   return (
     <div className="space-y-8 animate-fade-in pb-12">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950/60 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-blue-950/60 to-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Workflow className="w-48 h-48 text-indigo-400" />
+          <Box className="w-48 h-48 text-blue-400" />
         </div>
         <div className="relative z-10 max-w-4xl space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-            <Zap className="w-3.5 h-3.5" />
-            <span>High-Performance Distributed Architecture Hub</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+            <ShieldCheck className="w-3.5 h-3.5" />
+            <span>Production Hardening & Resource Sizing Architecture</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-            Ma Trận Hàng Đợi Tác Vụ & ARQ (Async Redis)
+            Gói Docker An Toàn (Non-Root) & Phân Bổ Tài Nguyên Chuẩn Xác
           </h1>
           <p className="text-slate-400 text-sm leading-relaxed">
-            So sánh toàn diện 4 mô hình hàng đợi tác vụ: <strong>ARQ (Async Redis)</strong> tối ưu I/O quy mô lớn, <strong>Postgres SKIP LOCKED</strong> bảo toàn tính nguyên tử ACID, <strong>FastAPI BackgroundTasks</strong> siêu nhẹ, và <strong>Celery</strong> đa tiến trình nặng nề.
+            Bọc code an toàn không chạy Root (chống hack leo thang), thuê vừa đủ <strong>Đầu bếp (Gunicorn Workers = (2 × Cores) + 1)</strong> để không quá tải CPU, và chia vừa đủ <strong>Vòi nước (DB Connection Pool)</strong> để không làm sập Database.
           </p>
         </div>
       </div>
@@ -250,15 +345,27 @@ export const notes = pgTable('notes', {
       {/* Main Mode Switcher Tabs */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
         <button
-          onClick={() => setMainSection('arq_matrix')}
+          onClick={() => setMainSection('docker_sizing')}
           className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
-            mainSection === 'arq_matrix'
+            mainSection === 'docker_sizing'
               ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30 font-bold'
               : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
           }`}
         >
-          <Workflow className="w-4 h-4 text-blue-300" />
-          <span>Ma Trận Hàng Đợi: ARQ (Async Redis)</span>
+          <Box className="w-4 h-4 text-blue-300" />
+          <span>🐳 Gói Docker & Sizing Lab</span>
+        </button>
+
+        <button
+          onClick={() => setMainSection('arq_matrix')}
+          className={`px-4 py-2.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all ${
+            mainSection === 'arq_matrix'
+              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 font-bold'
+              : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+          }`}
+        >
+          <Workflow className="w-4 h-4 text-indigo-300" />
+          <span>Ma Trận Hàng Đợi: ARQ</span>
         </button>
 
         <button
@@ -270,7 +377,7 @@ export const notes = pgTable('notes', {
           }`}
         >
           <ShieldAlert className="w-4 h-4 text-amber-300" />
-          <span>Trụ Cột 4: Cache-aside & Tombstone</span>
+          <span>Trụ Cột 4: Tombstone Cache</span>
         </button>
 
         <button
@@ -282,7 +389,7 @@ export const notes = pgTable('notes', {
           }`}
         >
           <Table className="w-4 h-4" />
-          <span>1. Chỉ Mục JSONB</span>
+          <span>Chỉ Mục JSONB</span>
         </button>
 
         <button
@@ -294,7 +401,7 @@ export const notes = pgTable('notes', {
           }`}
         >
           <Lock className="w-4 h-4" />
-          <span>2. Chống Write Bottlenecks</span>
+          <span>Chống Write Bottlenecks</span>
         </button>
 
         <button
@@ -306,16 +413,282 @@ export const notes = pgTable('notes', {
           }`}
         >
           <Minimize2 className="w-4 h-4" />
-          <span>3. Tránh Thuế TOAST</span>
+          <span>Tránh Thuế TOAST</span>
         </button>
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 5: MA TRẬN LỰA CHỌN HÀNG ĐỢI TÁC VỤ & ARQ (ASYNC REDIS) */}
+      {/* SECTION 0: DOCKER & RESOURCE SIZING LAB */}
+      {/* ========================================================================= */}
+      {mainSection === 'docker_sizing' && (
+        <div className="space-y-6">
+          {/* 3 CORE PILLARS OVERVIEW CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Card 1: Docker Non-Root Security */}
+            <div className="bg-slate-900 border border-emerald-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-emerald-400 font-bold text-sm">
+                <ShieldCheck className="w-5 h-5" />
+                <span>1. Bọc Code An Toàn (Non-Root)</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Tạo user & group riêng biệt <code className="px-1.5 py-0.5 bg-black/60 rounded text-emerald-300 font-mono">appuser:appgroup (UID 10001)</code>. Nếu ứng dụng có lỗ hổng, hacker <strong>không thể chiếm quyền root host</strong> để can thiệp hệ thống.
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-emerald-300 flex items-center gap-1.5">
+                <Check className="w-3.5 h-3.5" /> USER appuser:appgroup + dumb-init PID 1
+              </div>
+            </div>
+
+            {/* Card 2: Workers Sizing */}
+            <div className="bg-slate-900 border border-blue-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-blue-400 font-bold text-sm">
+                <Users className="w-5 h-5" />
+                <span>2. Vừa Đủ Đầu Bếp (Workers)</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Áp dụng công thức vàng: <code className="px-1.5 py-0.5 bg-black/60 rounded text-blue-300 font-mono font-bold">(2 × Cores) + 1</code>. Quá nhiều worker sẽ làm nghẽn CPU do Context-Switching; quá ít worker sẽ lãng phí tài nguyên.
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-blue-300 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-300" /> {sizingConfig.cpuCores} Cores ➔ {sizingResult.recommendedWorkers} Workers tối ưu
+              </div>
+            </div>
+
+            {/* Card 3: DB Connection Pool Sizing */}
+            <div className="bg-slate-900 border border-amber-500/40 rounded-xl p-5 space-y-3 relative overflow-hidden shadow-lg">
+              <div className="flex items-center gap-2.5 text-amber-400 font-bold text-sm">
+                <Droplets className="w-5 h-5" />
+                <span>3. Chia Vòi Nước (DB Pool) Vừa Đủ</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Phân bổ <code className="px-1.5 py-0.5 bg-black/60 rounded text-amber-300 font-mono font-bold">DB_POOL_SIZE</code> cho từng worker sao cho tổng kết nối luôn thấp hơn <code className="px-1.5 py-0.5 bg-black/60 rounded text-amber-300 font-mono">max_connections</code> của PostgreSQL, <strong>triệt tiêu nguy cơ sập Database</strong>.
+              </p>
+              <div className="pt-1 text-[11px] font-mono text-amber-300 flex items-center gap-1.5">
+                <Database className="w-3.5 h-3.5" /> Pool Size: {sizingResult.safePoolSizePerWorker} | Dự phòng: {sizingResult.dbHeadroomReserved} slots
+              </div>
+            </div>
+          </div>
+
+          {/* INTERACTIVE SIZING LAB CONTROLS */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-blue-400" />
+                  Bảng Điều Khiển Sizing & Giả Lập Tải Phần Cứng
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Thay đổi thông số hạ tầng để hệ thống tự động tính toán số Worker và Connection Pool an toàn.
+                </p>
+              </div>
+
+              {/* Status Indicator Badge */}
+              <div
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 ${
+                  sizingResult.dbStatusSeverity === 'safe'
+                    ? 'bg-emerald-950/60 border-emerald-500/80 text-emerald-300'
+                    : sizingResult.dbStatusSeverity === 'warning'
+                    ? 'bg-amber-950/60 border-amber-500/80 text-amber-300'
+                    : 'bg-rose-950/60 border-rose-500/80 text-rose-300'
+                }`}
+              >
+                {sizingResult.dbStatusSeverity === 'safe' ? (
+                  <CheckCircle2 className="w-4 h-4" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4" />
+                )}
+                <span>
+                  {sizingResult.dbStatusSeverity === 'safe'
+                    ? 'Cấu Hình An Toàn'
+                    : sizingResult.dbStatusSeverity === 'warning'
+                    ? 'Cảnh Báo Vòi Nước Hẹp'
+                    : 'CẢNH BÁO SẬP DATABASE!'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Sliders Input Column */}
+              <div className="lg:col-span-6 space-y-5">
+                {/* CPU Cores */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-blue-400" /> CPU Cores được cấp phát:
+                    </span>
+                    <span className="font-mono font-bold text-blue-400">{sizingConfig.cpuCores} Cores</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="16"
+                    step="1"
+                    value={sizingConfig.cpuCores}
+                    onChange={(e) =>
+                      setSizingConfig((prev) => ({ ...prev, cpuCores: Number(e.target.value) }))
+                    }
+                    className="w-full accent-blue-500 bg-slate-950 cursor-pointer"
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-500">
+                    <span>1 Core</span>
+                    <span>4 Cores</span>
+                    <span>8 Cores</span>
+                    <span>16 Cores</span>
+                  </div>
+                </div>
+
+                {/* Container RAM */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <HardDrive className="w-4 h-4 text-indigo-400" /> RAM Giới hạn của Container:
+                    </span>
+                    <span className="font-mono font-bold text-indigo-400">
+                      {sizingConfig.containerRamMb >= 1024
+                        ? `${(sizingConfig.containerRamMb / 1024).toFixed(1)} GB`
+                        : `${sizingConfig.containerRamMb} MB`}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="512"
+                    max="8192"
+                    step="512"
+                    value={sizingConfig.containerRamMb}
+                    onChange={(e) =>
+                      setSizingConfig((prev) => ({ ...prev, containerRamMb: Number(e.target.value) }))
+                    }
+                    className="w-full accent-indigo-500 bg-slate-950 cursor-pointer"
+                  />
+                </div>
+
+                {/* Postgres max_connections */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Database className="w-4 h-4 text-amber-400" /> PostgreSQL max_connections:
+                    </span>
+                    <span className="font-mono font-bold text-amber-400">
+                      {sizingConfig.postgresMaxConnections} vòi nước tối đa
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="20"
+                    max="300"
+                    step="10"
+                    value={sizingConfig.postgresMaxConnections}
+                    onChange={(e) =>
+                      setSizingConfig((prev) => ({
+                        ...prev,
+                        postgresMaxConnections: Number(e.target.value),
+                      }))
+                    }
+                    className="w-full accent-amber-500 bg-slate-950 cursor-pointer"
+                  />
+                </div>
+
+                {/* Container Replicas */}
+                <div className="space-y-2">
+                  <div className="flex justify-between text-xs text-slate-300">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Box className="w-4 h-4 text-emerald-400" /> Số lượng Pods / Replicas App:
+                    </span>
+                    <span className="font-mono font-bold text-emerald-400">{sizingConfig.containerReplicas} Pod(s)</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="8"
+                    step="1"
+                    value={sizingConfig.containerReplicas}
+                    onChange={(e) =>
+                      setSizingConfig((prev) => ({
+                        ...prev,
+                        containerReplicas: Number(e.target.value),
+                      }))
+                    }
+                    className="w-full accent-emerald-500 bg-slate-950 cursor-pointer"
+                  />
+                </div>
+              </div>
+
+              {/* Realtime Calculated Sizing Display */}
+              <div className="lg:col-span-6 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Workers Stat */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-blue-500/30">
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Số Đầu Bếp (Workers)</div>
+                    <div className="text-2xl font-bold font-mono text-blue-400 mt-1">
+                      {sizingResult.recommendedWorkers} Workers
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Công thức: (2 × {sizingConfig.cpuCores}) + 1
+                    </div>
+                  </div>
+
+                  {/* RAM per worker */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-indigo-500/30">
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Bộ nhớ / Worker</div>
+                    <div className="text-2xl font-bold font-mono text-indigo-400 mt-1">
+                      ~{sizingResult.memoryPerWorkerMb} MB
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">Mức an toàn chống OOM</div>
+                  </div>
+
+                  {/* DB Pool per worker */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-amber-500/30">
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Vòi Nước (Pool Size / Worker)</div>
+                    <div className="text-2xl font-bold font-mono text-amber-400 mt-1">
+                      {sizingResult.safePoolSizePerWorker} vòi
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      + {sizingResult.safeMaxOverflowPerWorker} overflow dự phòng
+                    </div>
+                  </div>
+
+                  {/* Total DB Conns vs Max */}
+                  <div className="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-bold">Tổng Vòi Nước Cluster</div>
+                    <div
+                      className={`text-2xl font-bold font-mono mt-1 ${
+                        sizingResult.isDbOverloaded ? 'text-rose-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      {sizingResult.totalMaxDbConnections} / {sizingConfig.postgresMaxConnections}
+                    </div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Còn dư {sizingResult.dbHeadroomReserved} slots cho DBA
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status Advice Box */}
+                <div
+                  className={`p-4 rounded-xl border text-xs leading-relaxed space-y-1.5 ${
+                    sizingResult.dbStatusSeverity === 'safe'
+                      ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-200'
+                      : sizingResult.dbStatusSeverity === 'warning'
+                      ? 'bg-amber-950/30 border-amber-500/50 text-amber-200'
+                      : 'bg-rose-950/40 border-rose-500/80 text-rose-200'
+                  }`}
+                >
+                  <div className="font-bold flex items-center gap-1.5">
+                    <Activity className="w-4 h-4" />
+                    <span>Đánh Giá Tải & Khuyến Nghị Kiến Trúc:</span>
+                  </div>
+                  <p>{sizingResult.dbStatusNote}</p>
+                  <p className="opacity-80">{sizingResult.workerCpuNote}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* SECTION 5: MA TRẬN LỰA CHỌN HÀNG ĐỢI TÁC VỤ & ARQ */}
       {/* ========================================================================= */}
       {mainSection === 'arq_matrix' && (
         <div className="space-y-6">
-          {/* MATRIX TABLE EXACTLY LIKE USER IMAGE */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
             <div className="p-4 sm:p-5 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/70">
               <div>
@@ -363,7 +736,6 @@ export const notes = pgTable('notes', {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 font-sans text-xs sm:text-sm">
-                  {/* Row 1: Mô hình Thực thi */}
                   <tr className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Mô hình Thực thi</td>
                     <td className="py-4 px-5 text-slate-300 bg-slate-900/30 border-l border-r border-slate-800/80">
@@ -378,7 +750,6 @@ export const notes = pgTable('notes', {
                     <td className="py-4 px-5 text-slate-300 bg-slate-900/30">Distributed Multi-process</td>
                   </tr>
 
-                  {/* Row 2: Tính bền vững */}
                   <tr className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Tính bền vững</td>
                     <td className="py-4 px-5 text-rose-300 bg-slate-900/30 border-l border-r border-slate-800/80">
@@ -393,24 +764,22 @@ export const notes = pgTable('notes', {
                     <td className="py-4 px-5 text-slate-300 bg-slate-900/30">RabbitMQ/Redis</td>
                   </tr>
 
-                  {/* Row 3: Tài nguyên (Bộ nhớ) */}
                   <tr className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Tài nguyên (Bộ nhớ)</td>
                     <td className="py-4 px-5 text-emerald-300 bg-slate-900/30 border-l border-r border-slate-800/80">
-                      Cực thấp
+                      Cực thấp (~12 MB)
                     </td>
                     <td className="py-4 px-5 text-slate-300 bg-indigo-950/20 border-r border-slate-800/80 font-medium">
-                      Thấp
+                      Thấp (~45 MB)
                     </td>
                     <td className="py-4 px-5 text-blue-300 bg-blue-950/30 border-r border-slate-800/80 font-bold">
-                      Rất tối ưu I/O
+                      Rất tối ưu I/O (~28 MB)
                     </td>
                     <td className="py-4 px-5 text-rose-300 bg-slate-900/30 font-medium">
-                      Nặng nề, Tốn RAM
+                      Nặng nề, Tốn RAM (~420 MB)
                     </td>
                   </tr>
 
-                  {/* Row 4: Ứng dụng Tối ưu (Best for) */}
                   <tr className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-4 px-5 font-bold text-white bg-slate-950/50">Ứng dụng Tối ưu (Best for)</td>
                     <td className="py-4 px-5 text-slate-400 bg-slate-900/30 border-l border-r border-slate-800/80 text-xs leading-relaxed">
@@ -430,126 +799,11 @@ export const notes = pgTable('notes', {
               </table>
             </div>
           </div>
-
-          {/* ARQ DEEP-DIVE & INTERACTIVE WORKER LAB */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left Column: Interactive ARQ Task Producer */}
-            <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-blue-400" />
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    ARQ (Async Redis) Task Dispatcher
-                  </h3>
-                </div>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
-                  Asyncio Event Loop Active
-                </span>
-              </div>
-
-              <div className="space-y-3">
-                <label className="text-xs font-medium text-slate-300">Chọn Loại Tác Vụ Async I/O:</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'send_webhook', label: 'Webhook', desc: 'Non-blocking I/O' },
-                    { id: 'batch_embedding', label: 'AI Embed', desc: 'Vector Pipeline' },
-                    { id: 'send_email', label: 'Email Batch', desc: 'Async SMTP' },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      onClick={() => setSelectedTaskType(t.id as any)}
-                      className={`p-2.5 rounded-lg border text-left text-xs transition-all ${
-                        selectedTaskType === t.id
-                          ? 'bg-blue-600 border-blue-400 text-white font-bold shadow-md'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      <div className="font-semibold">{t.label}</div>
-                      <div className="text-[10px] opacity-75">{t.desc}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <button
-                onClick={handleEnqueueArqJob}
-                disabled={isEnqueueing}
-                className="w-full py-3 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 transition-all active:scale-[0.99] disabled:opacity-50"
-              >
-                <Play className="w-4 h-4 text-amber-300" />
-                <span>{isEnqueueing ? 'Đang Đẩy Vào Redis Queue...' : 'Enqueue ARQ Async Task (35,000 QPS)'}</span>
-              </button>
-
-              {/* Resource Benchmark Cards */}
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Memory Overhead</div>
-                  <div className="text-base font-bold font-mono text-emerald-400 mt-1">~28 MB RAM</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Tiết kiệm 93% so với Celery</div>
-                </div>
-
-                <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Event Loop Latency</div>
-                  <div className="text-base font-bold font-mono text-blue-400 mt-1">0.12 ms</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">Độ trễ cận thời gian thực</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right Column: Execution Log & Active Jobs */}
-            <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-                    ARQ Worker Async Pipeline (Live Feed)
-                  </h3>
-                </div>
-                <span className="font-mono text-xs text-slate-400">
-                  Redis Backend: <span className="text-emerald-400 font-bold">Online</span>
-                </span>
-              </div>
-
-              {arqJobs.length === 0 ? (
-                <div className="p-8 text-center bg-slate-950 rounded-lg border border-slate-800/80 text-slate-500 text-xs space-y-2">
-                  <Terminal className="w-8 h-8 text-slate-600 mx-auto" />
-                  <p>Chưa có tác vụ nào trong hàng đợi. Nhấn nút "Enqueue ARQ Async Task" để kích hoạt!</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {arqJobs.map((job) => (
-                    <div
-                      key={job.jobId}
-                      className="p-3 rounded-lg bg-slate-950 border border-slate-800 text-xs flex items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-blue-400 font-bold">{job.functionName}()</span>
-                        <span className="font-mono text-[11px] text-slate-500">{job.jobId}</span>
-                      </div>
-
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono text-[11px] text-slate-400">
-                          {job.durationMs > 0 ? `${job.durationMs}ms` : 'Đang xử lý...'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                          COMPLETED
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="p-3.5 bg-blue-950/30 border border-blue-500/40 rounded-lg text-xs text-blue-200 leading-relaxed">
-                <strong>Tại sao chọn ARQ cho Async I/O?</strong> ARQ tận dụng trực tiếp <code>asyncio</code> Event Loop của Python kết hợp với cấu trúc dữ liệu hiệu năng cao của Redis. Một worker duy nhất có thể duy trì hàng ngàn kết nối I/O song song (Webhooks, API Gateway, AI Stream) mà không bị nghẽn hay tràn bộ nhớ như Celery.
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* SECTION 4: TRỤ CỘT 4 - CACHE-ASIDE & TOMBSTONE INVALIDATION */}
+      {/* SECTION 4: TRỤ CỘT 4 - TOMBSTONE INVALIDATION */}
       {/* ========================================================================= */}
       {mainSection === 'tombstone' && (
         <div className="space-y-6">
@@ -592,154 +846,14 @@ export const notes = pgTable('notes', {
               </div>
             </div>
 
-            {/* VISUAL SEQUENCE DIAGRAM REPRODUCTION */}
-            <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 sm:p-6 overflow-x-auto space-y-6">
-              <div className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80 pb-2 flex items-center justify-between">
-                <span>Kiến Trúc Luồng Tuần Tự (Sequence Diagram Flow)</span>
-                <span className="text-[11px] text-amber-400 font-mono">FastAPI / Node.js ⟷ Redis ⟷ PostgreSQL</span>
+            <div className="p-4 sm:p-5 rounded-xl bg-slate-900 border-2 border-indigo-500/80 shadow-md space-y-2">
+              <div className="flex items-center gap-2 text-indigo-300 text-sm font-bold uppercase tracking-wide">
+                <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                <span>Technical Rationale: Tại sao cần "Bia mộ" (Tombstone)?</span>
               </div>
-
-              <div className="grid grid-cols-3 gap-4 text-center min-w-[650px]">
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-indigo-300 shadow-md flex items-center justify-center gap-2">
-                  <Server className="w-4 h-4 text-indigo-400" />
-                  <span>FastAPI Worker (UC)</span>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-rose-300 shadow-md flex items-center justify-center gap-2">
-                  <Database className="w-4 h-4 text-rose-400" />
-                  <span>Redis Cache</span>
-                </div>
-                <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-cyan-300 shadow-md flex items-center justify-center gap-2">
-                  <HardDrive className="w-4 h-4 text-cyan-400" />
-                  <span>PostgreSQL DB</span>
-                </div>
-              </div>
-
-              <div className="space-y-4 min-w-[650px] relative py-2">
-                {/* FLOW 1 */}
-                <div className="space-y-3 bg-slate-900/40 p-4 rounded-xl border border-slate-800/70 relative">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-                    <span>Flow 1: Read-through Flow</span>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">get(key)</div>
-                    <div className="w-1/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-indigo-500 relative flex items-center justify-end">
-                        <ArrowRight className="w-4 h-4 text-indigo-400 -mr-1" />
-                      </div>
-                    </div>
-                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">Tra cứu nhanh trong RAM</div>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận thông báo Miss</div>
-                    <div className="w-1/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 border-t-2 border-dashed border-slate-500 relative flex items-center justify-start">
-                        <span className="absolute inset-x-0 -top-4 text-center font-mono text-[11px] text-amber-300 font-semibold">
-                          Miss
-                        </span>
-                      </div>
-                    </div>
-                    <div className="w-1/3 pl-4 font-mono text-slate-400">Key không tồn tại</div>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">SELECT</div>
-                    <div className="w-2/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-cyan-500 relative flex items-center justify-end">
-                        <ArrowRight className="w-4 h-4 text-cyan-400 -mr-1" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 text-slate-400 text-[11px]">Nhận dữ liệu từ DB</div>
-                    <div className="w-2/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-cyan-400/80 relative flex items-center justify-start">
-                        <span className="absolute inset-x-0 -top-4 text-center font-mono text-[11px] text-cyan-300 font-semibold">
-                          data
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300">Insert best-effort</div>
-                    <div className="w-1/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-emerald-500 relative flex items-center justify-end">
-                        <ArrowRight className="w-4 h-4 text-emerald-400 -mr-1" />
-                      </div>
-                    </div>
-                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">
-                      {withTombstone ? (
-                        <span className="text-emerald-300 font-semibold">
-                          ✓ Kiểm tra Tombstone trước khi SET
-                        </span>
-                      ) : (
-                        <span className="text-rose-400 font-semibold">
-                          ⚠ SET trực tiếp (Nguy cơ Stale Leak!)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* FLOW 2 */}
-                <div className="space-y-3 bg-amber-950/20 p-4 rounded-xl border-2 border-amber-500/60 relative shadow-lg">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                    <span>Flow 2: Invalidation Flow</span>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 font-mono text-amber-300 font-bold">UPDATE</div>
-                    <div className="w-2/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-amber-500 relative flex items-center justify-end">
-                        <ArrowRight className="w-4 h-4 text-amber-400 -mr-1" />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 rounded-lg bg-amber-950/40 border-2 border-amber-500 shadow-md">
-                    <div className="flex items-center text-xs">
-                      <div className="w-1/3 text-right pr-4 font-mono text-amber-200 font-bold flex items-center justify-end gap-1.5">
-                        <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                        <span>SET Tombstone (TTL)</span>
-                      </div>
-                      <div className="w-1/3 flex items-center justify-center">
-                        <div className="w-full h-1 bg-amber-500 relative flex items-center justify-end shadow-sm">
-                          <ArrowRight className="w-5 h-5 text-amber-400 -mr-1.5" />
-                        </div>
-                      </div>
-                      <div className="w-1/3 pl-4 text-amber-300 text-[11px] font-semibold">
-                        Đặt Bia Mộ tạm thời (TTL 5–15s)
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center text-xs">
-                    <div className="w-1/3 text-right pr-4 font-mono text-slate-300 font-medium">
-                      DELETE Cache Entry
-                    </div>
-                    <div className="w-1/3 flex items-center justify-center">
-                      <div className="w-full h-0.5 bg-amber-500/80 relative flex items-center justify-end">
-                        <ArrowRight className="w-4 h-4 text-amber-400 -mr-1" />
-                      </div>
-                    </div>
-                    <div className="w-1/3 pl-4 text-slate-400 text-[11px]">Xóa key hiện tại trên Redis</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* TECHNICAL RATIONALE REPRODUCTION BOX */}
-              <div className="p-4 sm:p-5 rounded-xl bg-slate-900 border-2 border-indigo-500/80 shadow-md space-y-2">
-                <div className="flex items-center gap-2 text-indigo-300 text-sm font-bold uppercase tracking-wide">
-                  <ShieldCheck className="w-5 h-5 text-indigo-400" />
-                  <span>Technical Rationale: Tại sao cần "Bia mộ" (Tombstone)?</span>
-                </div>
-                <p className="text-sm text-slate-200 leading-relaxed font-sans">
-                  <strong>Ngăn chặn Race-condition trong môi trường bất đồng bộ.</strong> Khi một luồng đọc (chậm) lấy dữ liệu cũ từ DB và định ghi đè lên Redis sau khi luồng ghi đã cập nhật DB. <strong>Tombstone chặn các thao tác ghi dữ liệu cũ lên cache mới.</strong>
-                </p>
-              </div>
+              <p className="text-sm text-slate-200 leading-relaxed font-sans">
+                <strong>Ngăn chặn Race-condition trong môi trường bất đồng bộ.</strong> Khi một luồng đọc (chậm) lấy dữ liệu cũ từ DB và định ghi đè lên Redis sau khi luồng ghi đã cập nhật DB. <strong>Tombstone chặn các thao tác ghi dữ liệu cũ lên cache mới.</strong>
+              </p>
             </div>
           </div>
         </div>
@@ -750,64 +864,13 @@ export const notes = pgTable('notes', {
       {/* ========================================================================= */}
       {mainSection === 'indexes' && (
         <div className="space-y-6">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Table className="w-4 h-4 text-indigo-400" />
-                <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-                  Bảng So Sánh 4 Chiến Lược Chỉ Mục JSONB
-                </h2>
-              </div>
-              <span className="text-xs text-slate-500 font-mono">PostgreSQL 14+ / 16</span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-950 text-xs uppercase font-semibold text-slate-400 border-b border-slate-800">
-                  <tr>
-                    <th className="py-3.5 px-4">Chỉ Tiêu So Sánh</th>
-                    <th className="py-3.5 px-4 text-indigo-400 bg-indigo-950/20 border-l border-r border-slate-800/80">
-                      GIN (jsonb_ops)
-                    </th>
-                    <th className="py-3.5 px-4 text-emerald-400 bg-emerald-950/20 border-r border-slate-800/80">
-                      GIN (jsonb_path_ops)
-                    </th>
-                    <th className="py-3.5 px-4 text-amber-400 bg-amber-950/20 border-r border-slate-800/80">
-                      Expression B-Tree
-                    </th>
-                    <th className="py-3.5 px-4 text-cyan-400 bg-cyan-950/20">Partial Index</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800 font-sans">
-                  <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">Toán tử hỗ trợ</td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-indigo-300 bg-indigo-950/10 border-l border-r border-slate-800/80">
-                      @&gt;, ?, ?|, ?&amp;
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-emerald-300 bg-emerald-950/10 border-r border-slate-800/80 font-bold">
-                      Chỉ @&gt;
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-amber-300 bg-amber-950/10 border-r border-slate-800/80">
-                      =, &lt;, &gt;, BETWEEN, IN
-                    </td>
-                    <td className="py-3.5 px-4 font-mono text-xs text-cyan-300 bg-cyan-950/10">Tùy thuộc toán tử</td>
-                  </tr>
-                  <tr className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-semibold text-white bg-slate-950/40">Dung lượng lưu trữ</td>
-                    <td className="py-3.5 px-4 text-rose-300 bg-indigo-950/10 border-l border-r border-slate-800/80">
-                      Rất lớn (50–100% table size)
-                    </td>
-                    <td className="py-3.5 px-4 text-emerald-300 bg-emerald-950/10 border-r border-slate-800/80 font-medium">
-                      Nhỏ (1/3–1/4 jsonb_ops)
-                    </td>
-                    <td className="py-3.5 px-4 text-amber-300 bg-amber-950/10 border-r border-slate-800/80 font-medium">
-                      Rất nhỏ (chỉ index 1 scalar key)
-                    </td>
-                    <td className="py-3.5 px-4 text-cyan-300 bg-cyan-950/10 font-bold">Cực kỳ nhỏ</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Chiến Lược Chỉ Mục JSONB & Anti-Pattern Detection
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Tối ưu hóa dung lượng đĩa bằng GIN <code>jsonb_path_ops</code> và Expression B-Tree, tránh hoàn toàn lỗi quét toàn bảng Sequential Scan khi dùng sai toán tử <code>-&gt;&gt;</code>.
+            </p>
           </div>
         </div>
       )}
@@ -817,26 +880,13 @@ export const notes = pgTable('notes', {
       {/* ========================================================================= */}
       {mainSection === 'locks' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-rose-900/60 rounded-xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm uppercase tracking-wider">
-                <XCircle className="w-5 h-5" />
-                <span>Problem: Row Locking Gây Deadlock</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Khi sử dụng <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">FOR UPDATE</code> trong hệ thống hàng đợi concurrent hoặc cập nhật bảng cha, PostgreSQL áp dụng **Exclusive Row Lock**. Mọi giao dịch kiểm tra Foreign Key đều bị block, dẫn tới **Deadlock Cascades**.
-              </p>
-            </div>
-
-            <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Solution: FOR NO KEY UPDATE</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Sử dụng <code className="px-1.5 py-0.5 bg-black/60 rounded text-emerald-300 font-mono">FOR NO KEY UPDATE</code>. PostgreSQL chỉ khóa các trường dữ liệu thông thường mà không khóa Primary/Unique Key, cho phép đọc và kiểm tra Foreign Key **chạy song song 100% không bị block**.
-              </p>
-            </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Chống Deadlock Hàng Đợi Bằng FOR NO KEY UPDATE
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Cho phép các tác vụ đọc và kiểm tra Foreign Key chạy song song 100% không bị block, triệt tiêu nguy cơ Deadlock khi nhiều worker cùng xử lý hàng đợi.
+            </p>
           </div>
         </div>
       )}
@@ -846,35 +896,22 @@ export const notes = pgTable('notes', {
       {/* ========================================================================= */}
       {mainSection === 'toast' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-rose-900/60 rounded-xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm uppercase tracking-wider">
-                <XCircle className="w-5 h-5" />
-                <span>Problem: Thuế TOAST (The TOAST Tax)</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Khi tài liệu <code className="px-1.5 py-0.5 bg-black/60 rounded text-rose-300 font-mono">JSONB &gt; 8KB</code>, PostgreSQL đẩy dữ liệu ra lưu trữ **out-of-line (bảng TOAST)**. Mỗi lần truy vấn lọc theo 1 key nhỏ, PostgreSQL buộc phải đọc từng chunk và **giải nén toàn bộ JSON document**, tiêu tốn CPU.
-              </p>
-            </div>
-
-            <div className="bg-slate-900 border border-emerald-900/60 rounded-xl p-5 space-y-4">
-              <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm uppercase tracking-wider">
-                <CheckCircle2 className="w-5 h-5" />
-                <span>Solution: Stored Generated Columns</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                Trích xuất các trường hay query ra thành **cột vật lý (Stored Generated Column)**. Dữ liệu được lưu trực tiếp trong Main Tuple, PostgreSQL Planner thu thập thống kê chính xác và đọc trực tiếp từ Index mà **không bao giờ tốn CPU giải nén TOAST**.
-              </p>
-            </div>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+              Tránh Thuế TOAST (Stored Generated Columns)
+            </h3>
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Trích xuất các trường hay lọc ra cột vật lý trong Main Tuple, loại bỏ 100% chi phí CPU giải nén tài liệu JSONB &gt;8KB.
+            </p>
           </div>
         </div>
       )}
 
-      {/* CODE GENERATOR (ARQ PYTHON, REDIS LUA SCRIPT, SQL DDL & DRIZZLE ORM) */}
+      {/* CODE GENERATOR (DOCKERFILE, GUNICORN CONF, DOCKER-COMPOSE, ARQ PYTHON, REDIS LUA, SQL DDL) */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-lg space-y-0">
         <div className="p-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Code2 className="w-4 h-4 text-indigo-400" />
+            <Code2 className="w-4 h-4 text-blue-400" />
             <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
               Mã Nguồn Cài Đặt Chuẩn Production
             </h2>
@@ -883,6 +920,36 @@ export const notes = pgTable('notes', {
           <div className="flex items-center gap-2">
             <div className="bg-slate-950 p-1 rounded-lg border border-slate-800 flex items-center gap-1 text-xs">
               <button
+                onClick={() => setActiveCodeTab('dockerfile')}
+                className={`px-3 py-1 rounded transition-colors ${
+                  activeCodeTab === 'dockerfile'
+                    ? 'bg-blue-600 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Dockerfile (Non-Root)
+              </button>
+              <button
+                onClick={() => setActiveCodeTab('gunicorn_conf')}
+                className={`px-3 py-1 rounded transition-colors ${
+                  activeCodeTab === 'gunicorn_conf'
+                    ? 'bg-blue-600 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                gunicorn.conf.py
+              </button>
+              <button
+                onClick={() => setActiveCodeTab('docker_compose')}
+                className={`px-3 py-1 rounded transition-colors ${
+                  activeCodeTab === 'docker_compose'
+                    ? 'bg-blue-600 text-white font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                docker-compose.yml
+              </button>
+              <button
                 onClick={() => setActiveCodeTab('arq_python')}
                 className={`px-3 py-1 rounded transition-colors ${
                   activeCodeTab === 'arq_python'
@@ -890,17 +957,7 @@ export const notes = pgTable('notes', {
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                ARQ (Python Async Redis)
-              </button>
-              <button
-                onClick={() => setActiveCodeTab('redis_lua')}
-                className={`px-3 py-1 rounded transition-colors ${
-                  activeCodeTab === 'redis_lua'
-                    ? 'bg-amber-600 text-white font-semibold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Redis Lua (Tombstone)
+                ARQ (Python)
               </button>
               <button
                 onClick={() => setActiveCodeTab('sql')}
@@ -910,30 +967,24 @@ export const notes = pgTable('notes', {
                     : 'text-slate-400 hover:text-slate-200'
                 }`}
               >
-                PostgreSQL SQL DDL
-              </button>
-              <button
-                onClick={() => setActiveCodeTab('drizzle')}
-                className={`px-3 py-1 rounded transition-colors ${
-                  activeCodeTab === 'drizzle'
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Drizzle ORM
+                SQL DDL
               </button>
             </div>
 
             <button
               onClick={() =>
                 handleCopy(
-                  activeCodeTab === 'arq_python'
+                  activeCodeTab === 'dockerfile'
+                    ? dockerfileCode
+                    : activeCodeTab === 'gunicorn_conf'
+                    ? gunicornConfCode
+                    : activeCodeTab === 'docker_compose'
+                    ? dockerComposeCode
+                    : activeCodeTab === 'arq_python'
                     ? arqPythonCode
                     : activeCodeTab === 'redis_lua'
                     ? redisLuaScript
-                    : activeCodeTab === 'sql'
-                    ? sqlDDL
-                    : drizzleSchema,
+                    : sqlDDL,
                   'fullCode'
                 )
               }
@@ -951,13 +1002,17 @@ export const notes = pgTable('notes', {
 
         <div className="p-4 bg-slate-950 font-mono text-xs text-slate-300 overflow-x-auto">
           <pre>
-            {activeCodeTab === 'arq_python'
+            {activeCodeTab === 'dockerfile'
+              ? dockerfileCode
+              : activeCodeTab === 'gunicorn_conf'
+              ? gunicornConfCode
+              : activeCodeTab === 'docker_compose'
+              ? dockerComposeCode
+              : activeCodeTab === 'arq_python'
               ? arqPythonCode
               : activeCodeTab === 'redis_lua'
               ? redisLuaScript
-              : activeCodeTab === 'sql'
-              ? sqlDDL
-              : drizzleSchema}
+              : sqlDDL}
           </pre>
         </div>
       </div>

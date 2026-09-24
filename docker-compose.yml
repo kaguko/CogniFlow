@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # 1. API SERVER (GUNICORN + UVICORN WORKERS - NON-ROOT)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: symflowage-api
+    restart: unless-stopped
+    user: "10001:10001" # Chạy bằng User không có quyền Root
+    ports:
+      - "8000:8000"
+    environment:
+      - BIND=0.0.0.0:8000
+      - WEB_CONCURRENCY=5 # (2 x 2 Cores) + 1 = 5 Workers ("Đầu bếp")
+      - DB_POOL_SIZE=10   # 10 vòi nước chính cho mỗi Worker
+      - DB_MAX_OVERFLOW=5 # 5 vòi nước dự phòng
+      - DATABASE_URL=postgresql://symflow_user:symflow_secret@postgres:5432/symflowage_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M # 1GB RAM tối đa
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # 2. ARQ ASYNC REDIS WORKER (TASK QUEUE)
+  arq_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: symflowage-arq-worker
+    restart: unless-stopped
+    user: "10001:10001"
+    command: ["arq", "app.worker.WorkerSettings"]
+    environment:
+      - DATABASE_URL=postgresql://symflow_user:symflow_secret@postgres:5432/symflowage_db
+      - REDIS_URL=redis://redis:6379/0
+      - DB_POOL_SIZE=5
+    depends_on:
+      - redis
+      - postgres
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # 3. POSTGRESQL DATABASE
+  postgres:
+    image: postgres:16-alpine
+    container_name: symflowage-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=symflow_user
+      - POSTGRES_PASSWORD=symflow_secret
+      - POSTGRES_DB=symflowage_db
+      # Giới hạn 100 kết nối tối đa để bảo vệ tài nguyên DB
+      - POSTGRES_MAX_CONNECTIONS=100
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U symflow_user -d symflowage_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 4. REDIS CACHE & ARQ BROKER
+  redis:
+    image: redis:7-alpine
+    container_name: symflowage-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
