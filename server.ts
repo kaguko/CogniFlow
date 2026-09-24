@@ -154,6 +154,20 @@ function getMeaningfulGoalTokens(value: string) {
   );
 }
 
+function addSemanticGuardrailMetadata(result: any, threshold = 40) {
+  const driftScore = Math.min(100, Math.max(0, 100 - Number(result?.overallAlignmentPercent ?? 100)));
+  const decision = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+  return {
+    ...result,
+    contractVersion: 'semantic-drift.v1',
+    requestId: randomUUID(),
+    driftScore,
+    guardrailThreshold: threshold,
+    guardrailStatus: decision,
+    decision,
+  };
+}
+
 async function generateAgentDecomposition(goalTitle: string, technicalContext: unknown) {
   if (!ai) return buildSmartFallbackDecompositionSteps(goalTitle);
 
@@ -672,13 +686,26 @@ app.post('/api/semantic-drift-analysis', createRateLimitMiddleware('ai_simple', 
   try {
     const { coreGoalTitle, coreGoalVision, tasks, userExemptions = [] } = req.body;
     if (!tasks || !Array.isArray(tasks) || tasks.length === 0) {
-      return res.json({
+      return res.json(addSemanticGuardrailMetadata({
         overallAlignmentPercent: 100,
         driftStatus: 'safe',
         detectedRabbitHoles: [],
         summaryAnalysis: 'Chưa có task nào để phân tích.',
         calibrationStats: getDriftCalibrationStats(),
-      });
+      }));
+    }
+
+    const normalizedTasks = tasks
+      .filter((task: any) => task && typeof task.title === 'string' && task.title.trim())
+      .map((task: any, index: number) => ({
+        id: typeof task.id === 'string' && task.id ? task.id : `task_${index + 1}`,
+        title: task.title.trim(),
+      }));
+    if (normalizedTasks.length !== tasks.length) {
+      return res.status(400).json({ error: 'every task must contain a non-empty title' });
+    }
+    if (normalizedTasks.length === 0) {
+      return res.status(400).json({ error: 'tasks must contain at least one item with a title' });
     }
 
     // Combine client exemptions with server-side learned false positives
@@ -691,24 +718,26 @@ app.post('/api/semantic-drift-analysis', createRateLimitMiddleware('ai_simple', 
       ...(Array.isArray(userExemptions) ? userExemptions : []),
     ];
 
-    const cacheKey = `drift_analysis:${(coreGoalTitle || '').toLowerCase()}:${tasks.map((t: any) => t.id || t.title).join(',')}:ex_${allExemptions.length}`;
+    const cacheKey = `drift_analysis:${(coreGoalTitle || '').toLowerCase()}:${normalizedTasks
+      .map((task: any) => `${task.id}:${task.title.toLowerCase()}`)
+      .join('|')}:ex_${allExemptions.length}`;
     const cached = smartCache.get(cacheKey);
     if (cached.hit && cached.data) {
       res.setHeader('X-Cache-Status', 'HIT');
-      return res.json({
+      return res.json(addSemanticGuardrailMetadata({
         ...cached.data,
         calibrationStats: getDriftCalibrationStats(),
-      });
+      }));
     }
     res.setHeader('X-Cache-Status', 'MISS');
 
     if (!ai) {
-      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, tasks, allExemptions);
+      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, normalizedTasks, allExemptions);
       smartCache.set(cacheKey, fallback, 'simple');
-      return res.json({
+      return res.json(addSemanticGuardrailMetadata({
         ...fallback,
         calibrationStats: getDriftCalibrationStats(),
-      });
+      }));
     }
 
     const exemptionsPromptText =
@@ -759,7 +788,7 @@ Trả về JSON thuần:
 Lưu ý: driftStatus: "safe" (>=70%), "caution" (50-69%), "danger_yellow" (<50%).
 `;
 
-    const prompt = `Phân tích danh sách ${tasks.length} task này:\n${JSON.stringify(tasks, null, 2)}`;
+    const prompt = `Phân tích danh sách ${normalizedTasks.length} task này:\n${JSON.stringify(normalizedTasks, null, 2)}`;
 
     try {
       const response = await generateContentWithFallback(ai, {
@@ -782,7 +811,7 @@ Lưu ý: driftStatus: "safe" (>=70%), "caution" (50-69%), "danger_yellow" (<50%)
         return !exemptionTitles.some((ex) => rhTitle.includes(ex) || ex.includes(rhTitle));
       });
 
-      const totalTasks = Math.max(1, tasks.length);
+      const totalTasks = Math.max(1, normalizedTasks.length);
       const alignedCount = totalTasks - filteredRabbitHoles.length;
       const recalculatedAlignment = Math.min(100, Math.max(0, Math.round((alignedCount / totalTasks) * 100)));
 
@@ -802,23 +831,23 @@ Lưu ý: driftStatus: "safe" (>=70%), "caution" (50-69%), "danger_yellow" (<50%)
       };
 
       smartCache.set(cacheKey, finalResult, 'simple');
-      return res.json(finalResult);
+      return res.json(addSemanticGuardrailMetadata(finalResult));
     } catch (aiErr: any) {
       console.warn('[api/semantic-drift-analysis] Fallback to resilient heuristic:', aiErr?.message || aiErr);
-      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, tasks, allExemptions);
+      const fallback = buildSmartFallbackSemanticDrift(coreGoalTitle, normalizedTasks, allExemptions);
       const fallbackWithStats = {
         ...fallback,
         calibrationStats: getDriftCalibrationStats(),
       };
       smartCache.set(cacheKey, fallbackWithStats, 'simple');
-      return res.json(fallbackWithStats);
+      return res.json(addSemanticGuardrailMetadata(fallbackWithStats));
     }
   } catch (err: any) {
     console.error('Error in /api/semantic-drift-analysis:', err);
-    return res.json({
+    return res.json(addSemanticGuardrailMetadata({
       ...buildSmartFallbackSemanticDrift(req.body?.coreGoalTitle || '', req.body?.tasks || []),
       calibrationStats: getDriftCalibrationStats(),
-    });
+    }));
   }
 });
 

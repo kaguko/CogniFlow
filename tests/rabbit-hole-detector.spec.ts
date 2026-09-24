@@ -46,6 +46,25 @@ test.describe('Rabbit Hole Detector', () => {
     expect(precision).toBe(1);
     expect(recall).toBe(1);
     expect(result.overallAlignmentPercent).toBeLessThan(100);
+    expect(result.contractVersion).toBe('semantic-drift.v1');
+    expect(result.decision).toBe('BLOCK');
+    expect(result.driftScore).toBeGreaterThanOrEqual(40);
     expect(result.summaryAnalysis).toContain('Rabbit Hole');
+  });
+
+  test('rejects malformed task lists instead of silently treating them as aligned', async ({ page }) => {
+    await page.goto('/');
+
+    const response = await page.evaluate(async () => {
+      const result = await fetch('http://127.0.0.1:3000/api/semantic-drift-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ coreGoalTitle: 'Ship MVP', tasks: [{ id: 'broken' }] }),
+      });
+      return { status: result.status, body: await result.json() };
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain('every task must contain');
   });
 });
