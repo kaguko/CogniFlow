@@ -82,6 +82,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Cosine search & Grounded Q&A',
     },
     {
+      id: 'jsonb_index',
+      label: 'Chiến Lược JSONB Index',
+      icon: Layers,
+      badge: 'Postgres',
+      description: 'GIN ops vs B-Tree & Anti-Pattern',
+    },
+    {
       id: 'behavioral',
       label: 'Phân Tích Hành Vi',
       icon: Activity,

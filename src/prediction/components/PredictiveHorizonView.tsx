@@ -71,10 +71,10 @@ export const PredictiveHorizonView: React.FC<PredictiveHorizonViewProps> = ({
       <div className="relative rounded-lg overflow-hidden border border-slate-800 bg-slate-900 shadow-md">
         <div className="h-44 sm:h-52 w-full relative">
           <img
-            src="/src/assets/images/symflowage_architecture_visual_1790137621456.jpg"
-            alt="SymFlowAge Architectural Visual"
+            src="/src/assets/images/symflowage_arch_1790182233914.jpg"
+            alt="SymFlowAge Multi-Agent Architectural Visual"
             referrerPolicy="no-referrer"
-            className="w-full h-full object-cover object-center opacity-40 mix-blend-luminosity filter contrast-125"
+            className="w-full h-full object-cover object-center opacity-60 mix-blend-luminosity filter contrast-125"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/80 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/60 to-transparent" />

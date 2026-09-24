@@ -123,6 +123,15 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
 - **Burndown Velocity Chart**: Trực quan hóa vận tốc đốt cháy khối lượng vi bước theo thời gian (Ideal Steps/Minutes vs Actual Velocity) giúp triệt tiêu cảm giác mơ hồ.
 - **Audio Report Generator**: Tích hợp nút Text-to-Speech phát báo cáo âm thanh tóm tắt xu hướng và trạng thái vận tốc nhận thức.
 
+### 8. 🗄️ Chiến Lược Lập Chỉ Mục JSONB trong PostgreSQL (Performance Benchmark Hub)
+- **Bảng ma trận so sánh 4 chiến lược Index JSONB**:
+  - **GIN (`jsonb_ops`)**: Hỗ trợ toàn diện các toán tử `@>`, `?`, `?|`, `?&` khi không biết trước schema.
+  - **GIN (`jsonb_path_ops`)**: Tối ưu riêng cho toán tử bao hàm `@>`, giảm **70% dung lượng đĩa** so với `jsonb_ops`.
+  - **Expression B-Tree**: Lập chỉ mục siêu nhỏ trên từng scalar key cố định (`(metadata->>'priority')`), hỗ trợ các toán tử `=`, `<`, `>`, `BETWEEN`, `IN` siêu tốc.
+  - **Partial Index**: Chỉ index các bản ghi thỏa mãn điều kiện lọc tĩnh (`WHERE is_active = true`), tối thiểu hóa chi phí lưu trữ và ghi đĩa.
+- **Phát hiện & Cảnh báo Anti-Pattern**: Cảnh báo tức thì bẫy hiệu năng khi tạo GIN Index nhưng lại truy vấn bằng toán tử `->>` (khiến PostgreSQL bỏ qua Index và rơi vào Sequential Scan).
+- **Trình tạo mã DDL & Drizzle ORM Schema**: Cung cấp sẵn mã SQL thuần và TypeScript Drizzle ORM để copy-paste trực tiếp.
+
 ---
 
 ## 🛠️ Kiến Trúc Kỹ Thuật (Tech Stack)

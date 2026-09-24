@@ -15,6 +15,7 @@ import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ZoomController } from './components/ZoomController';
 import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
+import { JsonbIndexStrategyView } from './components/JsonbIndexStrategyView';
 
 export default function App() {
   const [currentContext, setCurrentContext] = useState<ProjectContext>(DEFAULT_PRESET_CONTEXTS[0]);
@@ -324,6 +325,10 @@ export default function App() {
 
           {activeTab === 'rag' && (
             <SemanticKnowledgeRagView />
+          )}
+
+          {activeTab === 'jsonb_index' && (
+            <JsonbIndexStrategyView />
           )}
 
           {activeTab === 'behavioral' && (
