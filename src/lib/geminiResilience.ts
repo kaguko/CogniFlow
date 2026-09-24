@@ -424,3 +424,62 @@ export function buildSmartFallbackGoalPlan(goalTitle: string, category?: string,
     ],
   };
 }
+
+export function buildSmartFallbackDecompositionSteps(taskTitle: string) {
+  const cleanTitle = taskTitle.trim() || 'Tác vụ';
+  const now = Date.now();
+  return {
+    taskTitle: cleanTitle,
+    microSteps: [
+      {
+        id: `step_${now}_1`,
+        order: 1,
+        title: `Phác thảo ranh giới & Mock interface cho "${cleanTitle.slice(0, 32)}"`,
+        durationMinutes: 10,
+        programmerPrinciple: 'Boundary Isolation' as const,
+        inputRequired: 'Yêu cầu tính năng và type definitions',
+        singleAction: 'Tạo file type/interface hoặc config rỗng để xác lập ranh giới dữ liệu vào/ra.',
+        testCriterion: 'Type definitions compile hợp lệ, không có cú pháp lỗi.',
+        unblockTip: 'Chỉ định nghĩa các trường dữ liệu tối thiểu bắt buộc, tránh over-engineering.',
+        completed: false,
+      },
+      {
+        id: `step_${now}_2`,
+        order: 2,
+        title: `Viết 1 test kiểm chứng hoặc Smoke test Fail-Fast`,
+        durationMinutes: 10,
+        programmerPrinciple: 'Fail Fast' as const,
+        inputRequired: 'Interface vừa tạo ở bước 1',
+        singleAction: 'Tạo 1 test case cơ bản hoặc kịch bản gọi hàm kiểm tra phản hồi mong đợi.',
+        testCriterion: 'Chạy test và thấy báo đỏ (FAIL) đúng như dự kiến.',
+        unblockTip: 'Nếu chưa có test runner, viết một console.assert hoặc hàm debug nhỏ.',
+        completed: false,
+      },
+      {
+        id: `step_${now}_3`,
+        order: 3,
+        title: `Hiện thực hóa logic cốt lõi tối giản (Happy Path)`,
+        durationMinutes: 15,
+        programmerPrinciple: 'Divide & Conquer' as const,
+        inputRequired: 'Smoke test & Mock interface',
+        singleAction: 'Viết thân hàm logic đơn giản nhất để vượt qua Smoke test.',
+        testCriterion: 'Chạy thử thấy log hoặc test case chuyển sang màu xanh (PASS).',
+        unblockTip: 'Đừng bận tâm về tối ưu tốc độ vội, hãy làm cho nó chạy đúng trước.',
+        completed: false,
+      },
+      {
+        id: `step_${now}_4`,
+        order: 4,
+        title: `Xử lý biên ngoại lệ & Atomic Commit`,
+        durationMinutes: 10,
+        programmerPrinciple: 'Atomic Commit' as const,
+        inputRequired: 'Happy path code đã chạy',
+        singleAction: 'Thêm khối try/catch và commit code với message rõ ràng.',
+        testCriterion: 'Git diff sạch sẽ, commit khép kín có thể bàn giao ngay.',
+        unblockTip: 'Commit ngay khi xanh, không để dồn nhiều thay đổi vào 1 commit lớn.',
+        completed: false,
+      },
+    ],
+    leanAdvice: 'Tập trung hoàn thành 100% Happy Path trước khi nghĩ tới các tính năng phụ.',
+  };
+}

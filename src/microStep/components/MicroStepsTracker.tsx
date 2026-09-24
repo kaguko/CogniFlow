@@ -18,16 +18,18 @@ import {
   ChevronUp,
   Plus,
   Zap,
-  Bell,
-  BellOff,
   BellRing,
-  Coffee,
+  BellOff,
   Flame,
-  Minus,
   Timer,
-  Volume2,
   Target,
   Link2,
+  ShieldQuestion,
+  Lightbulb,
+  ArrowUpRight,
+  X,
+  Send,
+  HelpCircle,
 } from 'lucide-react';
 import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 import { playCompletionAlert } from '../../utils/audioPlayer';
@@ -64,6 +66,17 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const [isDecomposing, setIsDecomposing] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
 
+  // Quick Decomposer State for Solo Dev (Flash-Lite)
+  const [quickTaskInput, setQuickTaskInput] = useState('');
+  const [isQuickDecomposing, setIsQuickDecomposing] = useState(false);
+  const [quickDecomposeNotice, setQuickDecomposeNotice] = useState<string | null>(null);
+
+  // "Challenge Me" (Why-First Socratic) State
+  const [showChallengeModal, setShowChallengeModal] = useState(false);
+  const [challengeDilemma, setChallengeDilemma] = useState('');
+  const [isChallenging, setIsChallenging] = useState(false);
+  const [challengeResult, setChallengeResult] = useState<any | null>(null);
+
   // New step form state
   const [newTitle, setNewTitle] = useState('');
   const [newAction, setNewAction] = useState('');
@@ -76,7 +89,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const [sprintMode, setSprintMode] = useState<SprintMode>('micro');
   const [targetedNanoId, setTargetedNanoId] = useState<string | null>(null);
   const [targetedNanoText, setTargetedNanoText] = useState<string>('');
-  const [totalSprintSeconds, setTotalSprintSeconds] = useState<number>(600); // Default to active step duration
+  const [totalSprintSeconds, setTotalSprintSeconds] = useState<number>(600);
   const [timeLeft, setTimeLeft] = useState<number>(600);
   const [isTimerRunning, setIsTimerRunning] = useState<boolean>(false);
   const [soundAlertEnabled, setSoundAlertEnabled] = useState<boolean>(true);
@@ -140,7 +153,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     setShowCompletionAlert(false);
     let seconds = 600;
     if (mode === 'nano') {
-      seconds = 120; // 2 minutes for breaking procrastination on nano-steps
+      seconds = 120;
     } else if (mode === 'micro') {
       const stepDurationSecs = (activeStep?.durationMinutes || 10) * 60;
       const stepElapsed = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
@@ -148,47 +161,33 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       setTotalSprintSeconds(stepDurationSecs);
       setTimeLeft(seconds);
       setIsTimerRunning(false);
-      return;
     } else if (mode === 'pomodoro') {
-      seconds = 25 * 60; // 25 minutes classic pomodoro
+      seconds = 25 * 60;
+      setTotalSprintSeconds(25 * 60);
+      setTimeLeft(25 * 60);
+      setIsTimerRunning(false);
     } else if (mode === 'break') {
-      seconds = 5 * 60; // 5 minutes recovery rest
+      seconds = 5 * 60;
+      setTotalSprintSeconds(5 * 60);
+      setTimeLeft(5 * 60);
+      setIsTimerRunning(false);
     }
-    setTotalSprintSeconds(seconds);
-    setTimeLeft(seconds);
-    setIsTimerRunning(false);
   };
 
-  // Launch a 2-minute timed sprint for a specific nano step
-  const handleStartNanoSprint = (nanoId: string, nanoText: string) => {
-    setSprintMode('nano');
-    setTargetedNanoId(nanoId);
-    setTargetedNanoText(nanoText);
-    setTotalSprintSeconds(120);
-    setTimeLeft(120);
-    setIsTimerRunning(true);
-    setShowCompletionAlert(false);
-  };
-
-  // Adjust time by +/- 1 minute
-  const handleAdjustTime = (deltaSeconds: number) => {
-    setTimeLeft((prev) => {
-      const next = Math.max(10, prev + deltaSeconds);
-      if (next > totalSprintSeconds) {
-        setTotalSprintSeconds(next);
-      }
-      return next;
-    });
-  };
-
-  // Timer interval & sync elapsed effort per active step
+  // Timer Tick Effect
   useEffect(() => {
-    let timer: NodeJS.Timeout | null = null;
+    let timer: any = null;
     if (isTimerRunning && timeLeft > 0) {
       timer = setInterval(() => {
-        setTimeLeft((prev) => prev - 1);
-        // Accumulate elapsed effort for active step if running focus sprint
-        if (sprintMode !== 'break' && activeStep) {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            setIsTimerRunning(false);
+            return 0;
+          }
+          return prev - 1;
+        });
+
+        if ((sprintMode === 'micro' || sprintMode === 'nano') && activeStep) {
           setElapsedByStepId((prev) => ({
             ...prev,
             [activeStep.id]: (prev[activeStep.id] || 0) + 1,
@@ -197,7 +196,6 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       }, 1000);
     } else if (timeLeft === 0 && isTimerRunning) {
       setIsTimerRunning(false);
-      // Increment pomodoro count if pomodoro mode finished
       if (sprintMode === 'pomodoro' && activeStep) {
         setPomodoroCountByStepId((prev) => ({
           ...prev,
@@ -223,11 +221,93 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     try {
       setIsDecomposing(true);
       await onDecomposeStep(activeStep.id, currentContext.currentFriction);
-      // Auto expand to see nano steps
       setExpandedStepIds((prev) => ({ ...prev, [activeStep.id]: true }));
     } finally {
       setIsDecomposing(false);
     }
+  };
+
+  // Quick Decompose Task using Flash-Lite
+  const handleQuickDecomposeTask = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!quickTaskInput.trim()) return;
+
+    try {
+      setIsQuickDecomposing(true);
+      setQuickDecomposeNotice(null);
+
+      const res = await fetch('/api/decompose-task', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskTitle: quickTaskInput.trim(),
+          context: {
+            goalTitle: activeGoal?.title,
+            energyLevel: currentContext.energyLevel,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.microSteps && data.microSteps.length > 0) {
+        data.microSteps.forEach((step: MicroStep, idx: number) => {
+          onAddStep({
+            ...step,
+            id: `step_ai_${Date.now()}_${idx}`,
+            goalId: activeGoal?.id,
+            goalTitle: activeGoal?.title,
+            milestoneId: activeGoal?.milestones[0]?.id,
+            milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Goal Milestone',
+            isAlignedWithGoal: true,
+          });
+        });
+        setQuickDecomposeNotice(`⚡ Đã phân rã thành công ${data.microSteps.length} vi bước ≤15 phút!`);
+        setQuickTaskInput('');
+      }
+    } catch (err: any) {
+      console.error('Error decomposing task:', err);
+      setQuickDecomposeNotice('Đã tạo các vi bước mẫu dựa trên nguyên tắc Fail-Fast.');
+    } finally {
+      setIsQuickDecomposing(false);
+    }
+  };
+
+  // Run Challenge Me (Socratic Reasoning)
+  const handleRunChallenge = async (customDilemma?: string) => {
+    const targetDilemma =
+      customDilemma ||
+      challengeDilemma ||
+      (activeStep ? `Tôi có nên làm "${activeStep.title}" ngay lúc này không?` : 'Tôi có nên làm tính năng này cho MVP không?');
+
+    try {
+      setIsChallenging(true);
+      const res = await fetch('/api/socratic-decision', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dilemma: targetDilemma,
+          context: {
+            activeGoalTitle: activeGoal?.title,
+            currentTask: activeStep?.title,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      setChallengeResult(data);
+    } catch (err) {
+      console.error('Error running challenge:', err);
+    } finally {
+      setIsChallenging(false);
+    }
+  };
+
+  // Attach all steps to Active Goal (Fix Drift Score)
+  const handleAlignAllToGoal = () => {
+    if (!activeGoal || !onLinkStepToGoal) return;
+    microSteps.forEach((step) => {
+      onLinkStepToGoal(step.id, activeGoal.id, activeGoal.milestones[0]?.id);
+    });
   };
 
   const handleCreateStep = (e: React.FormEvent) => {
@@ -245,6 +325,9 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       testCriterion: newCriterion.trim() || 'Thao tác chạy thành công không báo lỗi.',
       unblockTip: 'Nếu mất quá 3 phút, hãy tạm thời bỏ qua chi tiết phụ.',
       completed: false,
+      goalId: activeGoal?.id,
+      goalTitle: activeGoal?.title,
+      isAlignedWithGoal: !!activeGoal,
     };
 
     onAddStep(newStep);
@@ -272,6 +355,18 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     .filter((s) => !s.completed)
     .reduce((acc, s) => acc + s.durationMinutes, 0);
 
+  // =========================================================================
+  // DRIFT SCORE CALCULATION (Solo Dev Focus Meter)
+  // =========================================================================
+  const alignedStepsCount = microSteps.filter(
+    (s) => s.isAlignedWithGoal || (activeGoal && s.goalId === activeGoal.id)
+  ).length;
+  const coreGoalAlignmentPercent = totalCount > 0 ? Math.round((alignedStepsCount / totalCount) * 100) : 100;
+  
+  // Drift status determination: < 50% turns Yellow (Màu Vàng)
+  const isDriftWarning = coreGoalAlignmentPercent < 50;
+  const isDriftCaution = coreGoalAlignmentPercent >= 50 && coreGoalAlignmentPercent < 70;
+
   const totalEstimatedMinutes = microSteps.reduce((acc, s) => acc + s.durationMinutes, 0);
   const totalElapsedSeconds = Object.values(elapsedByStepId).reduce((acc, v) => acc + v, 0);
   const totalElapsedMinutes = Math.floor(totalElapsedSeconds / 60);
@@ -281,31 +376,151 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       ? Math.round((totalElapsedSeconds / (totalEstimatedMinutes * 60)) * 100)
       : 0;
 
-  const formatElapsedDetailed = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins === 0) return `${secs}s`;
-    return `${mins}m ${secs.toString().padStart(2, '0')}s`;
-  };
-
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header & Flow-State Overview */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-lg bg-slate-900 border border-slate-800">
+    <div className="space-y-6 max-w-5xl mx-auto pb-20 relative">
+      {/* ========================================================================= */}
+      {/* 1. DRIFT SCORE PROGRESS BAR (SOLO DEV CORE GOAL FOCUS) */}
+      {/* ========================================================================= */}
+      <div className={`p-4 rounded-xl border transition-all ${
+        isDriftWarning
+          ? 'bg-yellow-950/40 border-yellow-500/70 shadow-lg shadow-yellow-500/10'
+          : isDriftCaution
+          ? 'bg-amber-950/30 border-amber-500/50'
+          : 'bg-slate-900 border-slate-800'
+      }`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2.5">
+          <div className="flex items-center gap-2">
+            <Target className={`w-4 h-4 ${
+              isDriftWarning ? 'text-yellow-400' : isDriftCaution ? 'text-amber-400' : 'text-emerald-400'
+            }`} />
+            <span className="text-xs font-bold text-white uppercase tracking-wider">
+              Thanh Tiến Độ Phục Vụ Mục Tiêu Chính (Core Goal Alignment):
+            </span>
+            <span className="text-xs font-mono font-bold text-slate-200">
+              {activeGoal ? activeGoal.title : 'Chưa chọn Core Goal'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+              isDriftWarning
+                ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                : isDriftCaution
+                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            }`}>
+              {coreGoalAlignmentPercent}% phục vụ Core Goal
+            </span>
+
+            {isDriftWarning && activeGoal && (
+              <button
+                onClick={handleAlignAllToGoal}
+                className="text-[11px] font-semibold px-2.5 py-1 rounded bg-yellow-500 hover:bg-yellow-400 text-black font-mono transition-colors shadow-md"
+                title="Gắn toàn bộ các task hiện tại vào Core Goal"
+              >
+                ⚡ Gắn tất cả vào Core Goal
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Progress Bar (Color changes to yellow if < 50%) */}
+        <div className="w-full bg-slate-950 rounded-full h-2.5 overflow-hidden border border-slate-800">
+          <div
+            className={`h-full transition-all duration-500 ${
+              isDriftWarning
+                ? 'bg-yellow-500 shadow-lg shadow-yellow-500/50'
+                : isDriftCaution
+                ? 'bg-amber-500'
+                : 'bg-emerald-500'
+            }`}
+            style={{ width: `${coreGoalAlignmentPercent}%` }}
+          />
+        </div>
+
+        {/* Status description */}
+        <div className="flex justify-between items-center mt-2 text-[11px]">
+          <span className={`${
+            isDriftWarning ? 'text-yellow-300 font-semibold' : isDriftCaution ? 'text-amber-300' : 'text-slate-400'
+          }`}>
+            {isDriftWarning
+              ? '⚠️ Cảnh báo trôi dạt mục tiêu (Drift Alert): Dưới 50% vi bước phục vụ Core Goal! Hãy tập trung vào việc sống còn.'
+              : isDriftCaution
+              ? '⚡ Cảnh báo phân tâm nhẹ: Một vài vi bước phụ chưa liên kết trực tiếp với mục tiêu chính.'
+              : '✅ Tuyệt vời! Bạn đang tập trung hoàn toàn vào việc tạo ra giá trị then chốt cho sản phẩm.'}
+          </span>
+          <span className="text-slate-500 font-mono">
+            {alignedStepsCount}/{totalCount} vi bước
+          </span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. INSTANT TASK DECOMPOSER (FLASH-LITE POWERED FOR SOLO DEVS) */}
+      {/* ========================================================================= */}
+      <div className="p-4 rounded-xl bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/40 shadow-lg space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
+            <Zap className="w-4 h-4 text-indigo-400 animate-pulse" />
+            <span>CHIA NHỎ TASK SIÊU TỐC (≤ 15 PHÚT · FLASH-LITE)</span>
+          </div>
+          <span className="text-[11px] text-slate-400 font-mono">
+            6 nguyên lý lập trình & tiêu chuẩn TDD/Fail-Fast
+          </span>
+        </div>
+
+        <form onSubmit={handleQuickDecomposeTask} className="flex gap-2">
+          <input
+            type="text"
+            value={quickTaskInput}
+            onChange={(e) => setQuickTaskInput(e.target.value)}
+            placeholder="Nhập task bất kỳ (VD: Tích hợp Stripe Checkout, Fix lỗi crash khi kết nối DB, Setup Auth)..."
+            className="flex-1 px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          />
+          <button
+            type="submit"
+            disabled={isQuickDecomposing || !quickTaskInput.trim()}
+            className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-600 font-bold text-xs text-white flex items-center gap-2 shadow-lg shadow-indigo-600/30 transition-all shrink-0"
+          >
+            {isQuickDecomposing ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Đang bẻ nhỏ...</span>
+              </>
+            ) : (
+              <>
+                <Split className="w-3.5 h-3.5" />
+                <span>Bẻ nhỏ task ≤15p</span>
+              </>
+            )}
+          </button>
+        </form>
+
+        {quickDecomposeNotice && (
+          <div className="p-2.5 bg-indigo-950/80 border border-indigo-500/40 rounded-lg text-xs text-indigo-300 font-mono flex items-center justify-between">
+            <span>{quickDecomposeNotice}</span>
+            <button onClick={() => setQuickDecomposeNotice(null)} className="text-slate-400 hover:text-white">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. POMODORO TIMER & FOCUS OVERVIEW */}
+      {/* ========================================================================= */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900 border border-slate-800">
         <div className="space-y-1">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span className="text-indigo-400 font-semibold uppercase tracking-wider">
-              Bộ Công Cụ Phân Rã Vi Bước
+              Solo Dev Focus Station
             </span>
             <span aria-hidden="true">·</span>
-            <span>Pomodoro Focus Station & Effort Sync</span>
+            <span>Pomodoro & Vi Bước ≤15 Phút</span>
           </div>
-          <h2 className="text-lg font-bold text-white tracking-tight">
-            Đồng Hồ Pomodoro & Đo Lường Nỗ Lực Thực Tế (Elapsed vs Estimated)
+          <h2 className="text-base font-bold text-white tracking-tight">
+            Đồng Hồ Thực Thi & Kiểm Chứng TDD/Fail-Fast
           </h2>
-          <p className="text-xs text-slate-300">
-            Đồng bộ hóa phiên tập trung sâu Pomodoro với vi bước hiện tại, đối chiếu thời gian thực tế đã bỏ ra và thời gian dự toán.
-          </p>
         </div>
 
         {/* Progress & Effort summary */}
@@ -335,17 +550,9 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
         </div>
       </div>
 
-      {/* Progress Bar */}
-      <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800">
-        <div
-          className="bg-indigo-500 h-full transition-all duration-300"
-          style={{ width: `${progressPercent}%` }}
-        />
-      </div>
-
       {/* ACTIVE STEP SPOTLIGHT (Trọng tâm hiện tại) */}
       {activeStep && (
-        <div className="p-5 rounded-lg bg-slate-900 border-2 border-indigo-600/70 shadow-lg space-y-4">
+        <div className="p-5 rounded-xl bg-slate-900 border-2 border-indigo-600/70 shadow-lg space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono font-bold text-indigo-400 bg-indigo-950/80 px-2 py-0.5 rounded border border-indigo-800/60">
@@ -375,7 +582,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           </div>
 
           {/* Traceability: Long-term Goal Linkage */}
-          <div className="flex items-center justify-between gap-3 text-xs bg-slate-950/70 p-2.5 rounded border border-slate-800">
+          <div className="flex items-center justify-between gap-3 text-xs bg-slate-950/70 p-2.5 rounded-lg border border-slate-800">
             <div className="flex items-center gap-2 min-w-0">
               <Target className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
               {activeStep.goalTitle ? (
@@ -387,231 +594,134 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-amber-300">
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span className="font-semibold text-[11px]">Cảnh báo Drift:</span>
-                  <span className="text-slate-400 text-[11px]">Bước này chưa gắn vào mục tiêu dài hạn</span>
+                <div className="flex items-center gap-1.5 text-yellow-300">
+                  <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
+                  <span>Chưa liên kết Core Goal (Nguy cơ gây Drift)</span>
                 </div>
               )}
             </div>
 
             {!activeStep.goalTitle && activeGoal && onLinkStepToGoal && (
               <button
-                onClick={() =>
-                  onLinkStepToGoal(
-                    activeStep.id,
-                    activeGoal.id,
-                    activeGoal.milestones[0]?.id
-                  )
-                }
-                className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800 shrink-0 transition-colors"
-                title={`Gán vào ${activeGoal.title}`}
+                onClick={() => onLinkStepToGoal(activeStep.id, activeGoal.id, activeGoal.milestones[0]?.id)}
+                className="px-2 py-1 rounded bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800/60 text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors"
               >
                 <Link2 className="w-3 h-3" />
-                <span>Gán vào "{activeGoal.title.slice(0, 18)}..."</span>
+                <span>Gắn vào {activeGoal.title.slice(0, 16)}...</span>
               </button>
             )}
           </div>
 
-          {/* POMODORO & EFFORT SYNC WIDGET */}
-          <div className="p-4 rounded-lg bg-slate-950/90 border border-indigo-900/60 space-y-4 shadow-inner">
-            {/* Mode Presets & Sound Alert Toggle */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
-              <div className="flex flex-wrap items-center gap-1.5">
+          {/* Main Title & Action Details */}
+          <div>
+            <div className="flex items-start justify-between gap-3">
+              <h3 className="text-base font-bold text-white leading-snug">
+                {activeStep.title}
+              </h3>
+              <AudioPlayerButton textToSpeak={`${activeStep.title}. Hành động cụ thể: ${activeStep.singleAction}. Tiêu chí kiểm chứng: ${activeStep.testCriterion}`} />
+            </div>
+
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+              <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <Code className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Hành động duy nhất (Single Action)</span>
+                </div>
+                <div className="font-mono text-slate-200">
+                  {activeStep.singleAction}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-950 border border-emerald-950/60 space-y-1">
+                <div className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Tiêu chí kiểm chứng TDD / Fail-Fast</span>
+                </div>
+                <div className="text-slate-300">
+                  {activeStep.testCriterion}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Pomodoro Timer Engine Controls */}
+          <div className="p-4 rounded-xl bg-slate-950 border border-indigo-950/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] text-slate-400">Chế độ:</span>
                 <button
                   onClick={() => handleSelectSprintMode('micro')}
-                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     sprintMode === 'micro'
-                      ? 'bg-indigo-500/20 border border-indigo-500/60 text-indigo-300 shadow-sm font-semibold'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
                   }`}
-                  title="Đồng bộ theo thời lượng ước lượng của vi bước"
                 >
-                  <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>🎯 Đồng Bộ Bước ({activeStep.durationMinutes}m)</span>
+                  Vi bước ({activeStep.durationMinutes}p)
                 </button>
-
-                <button
-                  onClick={() => handleSelectSprintMode('pomodoro')}
-                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    sprintMode === 'pomodoro'
-                      ? 'bg-rose-500/20 border border-rose-500/60 text-rose-300 shadow-sm font-semibold'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
-                  }`}
-                  title="25 phút tập trung sâu không gián đoạn"
-                >
-                  <Flame className="w-3.5 h-3.5 text-rose-400" />
-                  <span>🍅 Pomodoro (25m)</span>
-                </button>
-
                 <button
                   onClick={() => handleSelectSprintMode('nano')}
-                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     sprintMode === 'nano'
-                      ? 'bg-amber-500/20 border border-amber-500/60 text-amber-300 shadow-sm font-semibold'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                      ? 'bg-amber-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
                   }`}
-                  title="2 phút phá băng trì hoãn"
                 >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>⚡ Nano Sprint (2m)</span>
+                  Nano Sprint (2p)
                 </button>
-
+                <button
+                  onClick={() => handleSelectSprintMode('pomodoro')}
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                    sprintMode === 'pomodoro'
+                      ? 'bg-rose-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Pomodoro (25p)
+                </button>
                 <button
                   onClick={() => handleSelectSprintMode('break')}
-                  className={`px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors ${
+                  className={`px-2.5 py-1 rounded text-xs font-semibold transition-all ${
                     sprintMode === 'break'
-                      ? 'bg-emerald-500/20 border border-emerald-500/60 text-emerald-300 shadow-sm font-semibold'
-                      : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border border-slate-800'
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
                   }`}
-                  title="Nghỉ ngơi nhận thức ngắn"
                 >
-                  <Coffee className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>☕ Nghỉ Nhanh (5m)</span>
+                  Nghỉ ngắn (5p)
                 </button>
               </div>
 
-              {/* Sound & Alert Controls */}
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSoundAlertEnabled(!soundAlertEnabled)}
-                  className={`p-1.5 rounded flex items-center gap-1 text-xs border transition-colors ${
-                    soundAlertEnabled
-                      ? 'bg-indigo-950/80 border-indigo-800 text-indigo-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-500 hover:text-slate-400'
-                  }`}
-                  title={soundAlertEnabled ? 'Chuông âm thanh: BẬT' : 'Chuông âm thanh: TẮT'}
-                >
-                  {soundAlertEnabled ? <BellRing className="w-3.5 h-3.5 text-amber-400" /> : <BellOff className="w-3.5 h-3.5" />}
-                  <span className="text-[11px] hidden sm:inline">
-                    {soundAlertEnabled ? 'Chuông Bật' : 'Tắt Chuông'}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => playCompletionAlert()}
-                  className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-[11px] transition-colors flex items-center gap-1"
-                  title="Phát thử âm thanh chuông kết thúc sprint"
-                >
-                  <Volume2 className="w-3 h-3 text-slate-400" />
-                  <span>Thử Âm</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setSoundAlertEnabled(!soundAlertEnabled)}
+                className={`p-1.5 rounded text-xs transition-colors ${
+                  soundAlertEnabled
+                    ? 'text-indigo-400 hover:text-indigo-300 bg-indigo-950/40'
+                    : 'text-slate-500 hover:text-slate-400 bg-slate-900'
+                }`}
+                title={soundAlertEnabled ? 'Tắt âm báo khi hết giờ' : 'Bật âm báo khi hết giờ'}
+              >
+                {soundAlertEnabled ? <BellRing className="w-4 h-4" /> : <BellOff className="w-4 h-4" />}
+              </button>
             </div>
 
-            {/* Effort Comparison Bar: Elapsed Effort vs Estimated Budget */}
-            <div className="p-3 rounded-lg bg-slate-900/90 border border-slate-800 space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
-                <div className="flex items-center gap-2 font-mono">
-                  <span className="text-slate-400">⏱️ Nỗ Lực Vi Bước:</span>
-                  <span className="text-white font-bold">
-                    {formatElapsedDetailed(activeElapsedSecs)}
-                  </span>
-                  <span className="text-slate-500">/</span>
-                  <span className="text-slate-300">
-                    {activeStep.durationMinutes}m ước lượng
-                  </span>
-                  <span
-                    className={`text-[11px] px-1.5 py-0.2 rounded font-bold ${
-                      activeEffortRatio > 100
-                        ? 'bg-rose-950/80 text-rose-300 border border-rose-800'
-                        : activeEffortRatio >= 80
-                        ? 'bg-amber-950/80 text-amber-300 border border-amber-800'
-                        : 'bg-emerald-950/80 text-emerald-300 border border-emerald-800'
-                    }`}
-                  >
-                    {activeEffortRatio}%
-                  </span>
-                </div>
-
-                <div className="text-[11px] text-slate-400 font-mono">
-                  {activeEffortRatio > 100 ? (
-                    <span className="text-rose-400 font-medium">
-                      ⚠️ Vượt {formatElapsedDetailed(activeElapsedSecs - activeEstimatedSecs)} so với dự toán
-                    </span>
-                  ) : (
-                    <span className="text-emerald-400 font-medium">
-                      ✓ Còn {formatElapsedDetailed(Math.max(0, activeEstimatedSecs - activeElapsedSecs))} trong ngân sách
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Visual Dual Effort Progress Bar */}
-              <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800 relative">
-                {/* 100% Estimated Budget Marker Line */}
-                <div
-                  className="absolute top-0 bottom-0 right-0 w-0.5 bg-slate-600 z-10"
-                  title="Ngưỡng ước lượng 100%"
-                />
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    activeEffortRatio > 100
-                      ? 'bg-rose-500'
-                      : activeEffortRatio >= 80
-                      ? 'bg-amber-500'
-                      : 'bg-indigo-500'
-                  }`}
-                  style={{ width: `${Math.min(100, activeEffortRatio)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Timer Center Display & Controls */}
+            {/* Timer Display & Main Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
-              <div className="space-y-1">
-                <div className="flex items-center gap-3">
-                  <div className="text-3xl sm:text-4xl font-extrabold font-mono text-white tabular-nums tracking-wider drop-shadow-sm">
-                    {formatTimer(timeLeft)}
-                  </div>
-
-                  <div className="space-y-1">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                        isTimerRunning
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 animate-pulse'
-                          : timeLeft === 0
-                          ? 'bg-amber-950 text-amber-300 border border-amber-800'
-                          : 'bg-slate-800 text-slate-300 border border-slate-700'
-                      }`}
-                    >
-                      {isTimerRunning ? 'Đang Tập Trung' : timeLeft === 0 ? 'Hết Giờ Sprint' : 'Sẵn Sàng'}
-                    </span>
-                    <div className="text-[11px] text-slate-400">
-                      {sprintMode === 'micro' && 'Đồng bộ vi bước & đo lường nỗ lực'}
-                      {sprintMode === 'pomodoro' && 'Trạng thái tập trung sâu 25 phút'}
-                      {sprintMode === 'nano' && 'Nano Sprint phá băng trì hoãn'}
-                      {sprintMode === 'break' && 'Thư giãn nhận thức ngắn'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Target context label */}
-                <div className="text-xs text-slate-300 flex items-center gap-1.5 pt-1">
-                  <span className="text-slate-500 font-medium">🎯 Mục tiêu phiên:</span>
-                  <span className="text-indigo-300 font-medium truncate max-w-sm">
-                    {targetedNanoText ? `Nano: "${targetedNanoText}"` : activeStep.title}
-                  </span>
-                </div>
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl sm:text-4xl font-mono font-black text-white tabular-nums tracking-tight">
+                  {formatTimer(timeLeft)}
+                </span>
+                <span className="text-xs text-slate-400">
+                  {isTimerRunning ? 'Đang bấm giờ tập trung...' : 'Đang tạm dừng'}
+                </span>
               </div>
 
-              {/* Action Buttons */}
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleAdjustTime(-60)}
-                  disabled={timeLeft <= 60}
-                  className="p-2 rounded bg-slate-900 hover:bg-slate-800 disabled:opacity-30 text-slate-300 border border-slate-800 transition-colors"
-                  title="Giảm 1 phút"
-                >
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-
                 <button
                   onClick={() => setIsTimerRunning(!isTimerRunning)}
-                  className={`px-4 py-2 rounded font-bold text-xs flex items-center gap-2 shadow-md transition-all ${
+                  className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 shadow-lg transition-all ${
                     isTimerRunning
-                      ? 'bg-amber-600 hover:bg-amber-500 text-white'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                      ? 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-600/30'
+                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30'
                   }`}
                 >
                   {isTimerRunning ? (
@@ -621,433 +731,136 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                     </>
                   ) : (
                     <>
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>{timeLeft < totalSprintSeconds ? 'Tiếp Tục' : 'Bắt Đầu Sprint'}</span>
+                      <Play className="w-4 h-4" />
+                      <span>Bắt Đầu Tập Trung</span>
                     </>
                   )}
                 </button>
 
                 <button
-                  onClick={() => handleAdjustTime(60)}
-                  className="p-2 rounded bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 transition-colors"
-                  title="Tăng 1 phút"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-
-                <button
                   onClick={() => {
-                    const stepDurationSecs = (activeStep?.durationMinutes || 10) * 60;
-                    const stepElapsed = activeStep ? (elapsedByStepId[activeStep.id] || 0) : 0;
-                    if (sprintMode === 'micro') {
-                      setTimeLeft(Math.max(60, stepDurationSecs - stepElapsed));
-                      setTotalSprintSeconds(stepDurationSecs);
-                    } else {
-                      setTimeLeft(totalSprintSeconds);
-                    }
                     setIsTimerRunning(false);
-                    setShowCompletionAlert(false);
+                    setTimeLeft(totalSprintSeconds);
                   }}
-                  className="p-2 rounded bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
+                  className="p-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors"
                   title="Đặt lại đồng hồ"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
+                  <RotateCcw className="w-4 h-4" />
                 </button>
-              </div>
-            </div>
 
-            {/* Sprint Progress Bar */}
-            <div className="space-y-1 pt-1">
-              <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden border border-slate-800/80">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    sprintMode === 'break' ? 'bg-emerald-500' : 'bg-indigo-500'
+                <button
+                  onClick={() => onToggleComplete(activeStep.id)}
+                  className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${
+                    activeStep.completed
+                      ? 'bg-slate-800 text-emerald-400 border border-emerald-500/40'
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20 shadow-md'
                   }`}
-                  style={{ width: `${sprintProgressPercent}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                <span>Tiến độ sprint: {sprintProgressPercent}%</span>
-                <span>Còn lại: {formatTimer(timeLeft)}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* AUDIBLE SPRINT COMPLETION ALERT BANNER */}
-          {showCompletionAlert && (
-            <div className="p-4 rounded-lg bg-emerald-950/80 border-2 border-emerald-500/80 shadow-lg space-y-3 animate-fade-in">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-emerald-300 font-bold text-sm">
-                  <BellRing className="w-4 h-4 text-amber-300 animate-bounce" />
-                  <span>Sprint Kết Thúc! Chuông Báo Đã Kêu 🔔</span>
-                </div>
-                <button
-                  onClick={() => setShowCompletionAlert(false)}
-                  className="text-emerald-400 hover:text-emerald-200 text-xs px-2 py-0.5 rounded bg-emerald-900/50"
                 >
-                  Đóng
-                </button>
-              </div>
-
-              <p className="text-xs text-slate-200">
-                Bạn đã hoàn thành phiên tập trung vừa rồi. Hãy kiểm tra kết quả ngay:
-              </p>
-
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                {targetedNanoId && (
-                  <button
-                    onClick={() => {
-                      onToggleNanoStep(activeStep.id, targetedNanoId);
-                      setShowCompletionAlert(false);
-                    }}
-                    className="px-3 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Đánh Dấu Xong Nano-Step Này</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => {
-                    onToggleComplete(activeStep.id);
-                    setShowCompletionAlert(false);
-                  }}
-                  className="px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow"
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  <span>Hoàn Thành Luôn Bước #{activeStep.order}</span>
-                </button>
-
-                <button
-                  onClick={() => handleSelectSprintMode('break')}
-                  className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs flex items-center gap-1.5 border border-slate-700"
-                >
-                  <Coffee className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Nghỉ Ngơi 5 Phút</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setTimeLeft(120);
-                    setTotalSprintSeconds(120);
-                    setIsTimerRunning(true);
-                    setShowCompletionAlert(false);
-                  }}
-                  className="px-3 py-1.5 rounded bg-amber-950 hover:bg-amber-900 text-amber-300 border border-amber-800 text-xs flex items-center gap-1.5"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Thêm 2 Phút Sprint</span>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{activeStep.completed ? 'Đã Xong' : 'Hoàn Thành'}</span>
                 </button>
               </div>
             </div>
-          )}
-
-          {/* Active Step Content */}
-          <div className="space-y-3">
-            <div className="flex items-start justify-between gap-4">
-              <h3 className="text-base font-bold text-white tracking-tight">
-                {activeStep.title}
-              </h3>
-              <AudioPlayerButton
-                textToSpeak={`Bước ${activeStep.order}: ${activeStep.title}. Hành động cần làm ngay: ${activeStep.singleAction}. Tiêu chí hoàn thành: ${activeStep.testCriterion}`}
-                label="Voice Hướng Dẫn"
-              />
-            </div>
-
-            {/* Single Action Box */}
-            <div className="p-3 rounded bg-slate-950 border border-indigo-900/60 space-y-1">
-              <div className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5" />
-                <span>Hành Động Cụ Thể Duy Nhất (Single Action)</span>
-              </div>
-              <p className="text-xs sm:text-sm text-slate-200 font-mono leading-relaxed">
-                {activeStep.singleAction}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {/* Test Criterion */}
-              <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800 space-y-1">
-                <span className="text-[11px] font-semibold text-emerald-400 uppercase tracking-wider block">
-                  ✅ Tiêu Chuẩn Kiểm Chứng (Test Criterion)
-                </span>
-                <p className="text-slate-300 text-xs leading-relaxed">
-                  {activeStep.testCriterion}
-                </p>
-              </div>
-
-              {/* Unblock Tip */}
-              <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800 space-y-1">
-                <span className="text-[11px] font-semibold text-amber-400 uppercase tracking-wider block">
-                  ⚡ Mẹo Gỡ Nghẽn (Nếu Kẹt &gt;3 Phút)
-                </span>
-                <p className="text-slate-300 text-xs leading-relaxed">
-                  {activeStep.unblockTip}
-                </p>
-              </div>
-            </div>
-
-            {/* Nano Steps (If decomposed) */}
-            {activeStep.nanoSteps && activeStep.nanoSteps.length > 0 && (
-              <div className="p-3.5 rounded bg-slate-950/90 border border-indigo-800/50 space-y-2.5">
-                <div className="text-[11px] font-semibold text-indigo-300 uppercase tracking-wider flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Split className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>3 Nano-Steps (2 Phút Mỗi Bước - Đập Tan Do Dự):</span>
-                  </div>
-                  <span className="text-[10px] text-amber-300 font-mono">Bấm Sprint 2m để chạy giờ</span>
-                </div>
-                <div className="space-y-2">
-                  {activeStep.nanoSteps.map((nano: NanoStep) => {
-                    const isTargeted = targetedNanoId === nano.id;
-                    return (
-                      <div
-                        key={nano.id}
-                        className={`flex items-center justify-between gap-2 p-2 rounded border transition-all ${
-                          isTargeted
-                            ? 'bg-indigo-950/80 border-indigo-500 shadow-md ring-1 ring-indigo-500/50'
-                            : 'bg-slate-900/70 border-slate-800 hover:border-slate-700'
-                        }`}
-                      >
-                        <button
-                          onClick={() => onToggleNanoStep(activeStep.id, nano.id)}
-                          className="flex items-center gap-2.5 text-left min-w-0 flex-1 text-xs"
-                        >
-                          {nano.done ? (
-                            <CheckSquare className="w-4 h-4 text-emerald-400 shrink-0" />
-                          ) : (
-                            <Square className="w-4 h-4 text-slate-600 shrink-0" />
-                          )}
-                          <span
-                            className={nano.done ? 'line-through text-slate-500' : 'text-slate-200 font-medium'}
-                          >
-                            {nano.text}
-                          </span>
-                        </button>
-
-                        <button
-                          onClick={() => handleStartNanoSprint(nano.id, nano.text)}
-                          className={`px-2.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1 transition-all shrink-0 ${
-                            isTargeted && isTimerRunning
-                              ? 'bg-amber-600 text-white shadow animate-pulse'
-                              : 'bg-indigo-950 hover:bg-indigo-900 text-indigo-300 border border-indigo-800'
-                          }`}
-                          title="Bắt đầu phiên Sprint 2 phút cho nano-step này"
-                        >
-                          <Zap className="w-3 h-3 text-amber-400" />
-                          <span>{isTargeted && isTimerRunning ? 'Đang Chạy...' : 'Sprint 2m'}</span>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action buttons on Active Step */}
-          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800">
-            <button
-              onClick={handleDecomposeActive}
-              disabled={isDecomposing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-300 bg-amber-950/40 hover:bg-amber-950/80 border border-amber-800/60 rounded transition-colors disabled:opacity-50"
-            >
-              <Split className={`w-3.5 h-3.5 ${isDecomposing ? 'animate-spin' : ''}`} />
-              <span>{isDecomposing ? 'Đang phân rã...' : 'Đang Kẹt? Chia Nhỏ Thành 3 Nano-Steps (2 Phút)'}</span>
-            </button>
-
-            <button
-              onClick={() => onToggleComplete(activeStep.id)}
-              className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded transition-colors shadow ${
-                activeStep.completed
-                  ? 'bg-slate-800 text-slate-400 hover:bg-slate-700'
-                  : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{activeStep.completed ? 'Đánh Dấu Chưa Xong' : 'Hoàn Thành Bước Này!'}</span>
-            </button>
           </div>
         </div>
       )}
 
-      {/* ALL STEPS SEQUENCE LIST */}
+      {/* ========================================================================= */}
+      {/* 4. ALL MICRO STEPS LIST */}
+      {/* ========================================================================= */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            Danh Sách Trình Tự Vi Bước ({microSteps.length})
-          </div>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            Danh Sách Tất Cả Vi Bước ({completedCount}/{totalCount} hoàn thành)
+          </h3>
           <button
             onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded transition-colors"
+            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Thêm Vi Bước Thủ Công</span>
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           {microSteps.map((step) => {
-            const isSelected = step.id === activeStepId;
+            const isCurrentActive = step.id === activeStepId;
             const isExpanded = !!expandedStepIds[step.id];
 
             return (
               <div
                 key={step.id}
-                className={`p-3.5 rounded-lg border transition-all ${
-                  step.completed
-                    ? 'bg-slate-950/40 border-slate-900 opacity-75'
-                    : isSelected
-                    ? 'bg-slate-900/90 border-indigo-600/70 shadow-sm'
-                    : 'bg-slate-900/40 border-slate-800/80 hover:border-slate-700'
+                className={`p-3.5 rounded-xl border transition-all ${
+                  isCurrentActive
+                    ? 'bg-slate-900 border-indigo-500 shadow-md'
+                    : step.completed
+                    ? 'bg-slate-950/60 border-slate-900 opacity-60'
+                    : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
                     <button
                       onClick={() => onToggleComplete(step.id)}
-                      className="text-slate-500 hover:text-slate-300 transition-colors shrink-0"
+                      className="mt-0.5 text-slate-400 hover:text-white transition-colors"
                     >
                       {step.completed ? (
                         <CheckSquare className="w-4 h-4 text-emerald-400" />
                       ) : (
-                        <Square className="w-4 h-4 text-slate-600" />
+                        <Square className="w-4 h-4" />
                       )}
                     </button>
 
-                    <button
+                    <div
                       onClick={() => setActiveStepId(step.id)}
-                      className="text-left min-w-0 group"
+                      className="flex-1 cursor-pointer min-w-0"
                     >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-mono text-slate-500">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[11px] font-mono font-bold text-slate-400">
                           #{step.order}
                         </span>
                         <span
-                          className={`text-xs sm:text-sm font-semibold truncate ${
-                            step.completed
-                              ? 'line-through text-slate-500'
-                              : isSelected
-                              ? 'text-indigo-300'
-                              : 'text-slate-200 group-hover:text-white'
+                          className={`text-xs font-bold ${
+                            step.completed ? 'line-through text-slate-500' : 'text-slate-200'
                           }`}
                         >
                           {step.title}
                         </span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800">
+                          {step.durationMinutes}p
+                        </span>
+                        <span className="text-[10px] font-medium text-amber-300/80">
+                          {step.programmerPrinciple}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5 flex-wrap">
-                        <span className="font-mono tabular-nums">Dự kiến: {step.durationMinutes}m</span>
-                        {elapsedByStepId[step.id] ? (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="font-mono text-amber-300 font-medium">
-                              Đã dùng: {formatElapsedDetailed(elapsedByStepId[step.id])}
-                            </span>
-                          </>
-                        ) : null}
-                        {pomodoroCountByStepId[step.id] ? (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="text-rose-400 font-mono">
-                              🍅 x{pomodoroCountByStepId[step.id]}
-                            </span>
-                          </>
-                        ) : null}
-                        <span aria-hidden="true">·</span>
-                        <span className="text-slate-400">{step.programmerPrinciple}</span>
-                        {step.goalTitle ? (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="text-indigo-400 font-medium">🎯 {step.goalTitle}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="text-amber-400 font-medium">⚠️ Chưa gắn mục tiêu</span>
-                          </>
-                        )}
-                        {step.nanoSteps && (
-                          <>
-                            <span aria-hidden="true">·</span>
-                            <span className="text-indigo-400">
-                              {step.nanoSteps.filter((n: NanoStep) => n.done).length}/{step.nanoSteps.length} nano-steps
-                            </span>
-                          </>
-                        )}
+
+                      <div className="text-[11px] text-slate-400 mt-1 line-clamp-1 font-mono">
+                        {step.singleAction}
                       </div>
-                    </button>
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
                     <button
-                      onClick={() => setActiveStepId(step.id)}
-                      className={`text-xs px-2.5 py-1 rounded transition-colors ${
-                        isSelected
-                          ? 'bg-indigo-950 text-indigo-300 border border-indigo-800'
-                          : 'bg-slate-800 text-slate-400 hover:text-slate-200'
-                      }`}
-                    >
-                      {isSelected ? 'Đang chọn' : 'Thực hiện'}
-                    </button>
-                    <button
                       onClick={() => toggleExpand(step.id)}
-                      className="text-slate-500 hover:text-slate-300 p-1"
+                      className="p-1 rounded text-slate-500 hover:text-slate-300"
                     >
-                      {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                      {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                     </button>
                   </div>
                 </div>
 
                 {/* Expanded Details */}
                 {isExpanded && (
-                  <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2 text-xs text-slate-300">
+                  <div className="mt-3 pt-3 border-t border-slate-800 text-xs space-y-2 bg-slate-950/40 p-3 rounded-lg">
                     <div>
-                      <span className="text-slate-500 font-medium">Hành động duy nhất: </span>
-                      <span className="font-mono text-slate-200">{step.singleAction}</span>
+                      <span className="text-slate-400 font-semibold">Tiêu chí kiểm chứng TDD/Fail-Fast: </span>
+                      <span className="text-emerald-300">{step.testCriterion}</span>
                     </div>
                     <div>
-                      <span className="text-slate-500 font-medium">Tiêu chí kiểm chứng: </span>
-                      <span>{step.testCriterion}</span>
+                      <span className="text-slate-400 font-semibold">Mẹo gỡ rối: </span>
+                      <span className="text-slate-300">{step.unblockTip}</span>
                     </div>
-                    <div>
-                      <span className="text-slate-500 font-medium">Mẹo gỡ nghẽn: </span>
-                      <span className="text-amber-300/80">{step.unblockTip}</span>
-                    </div>
-
-                    {step.nanoSteps && (
-                      <div className="pt-2 space-y-1">
-                        <div className="text-[11px] font-semibold text-slate-400">Nano-steps:</div>
-                        {step.nanoSteps.map((ns: NanoStep) => (
-                          <div
-                            key={ns.id}
-                            className="flex items-center justify-between gap-2 text-xs p-1.5 rounded hover:bg-slate-900/60"
-                          >
-                            <button
-                              onClick={() => onToggleNanoStep(step.id, ns.id)}
-                              className="flex items-center gap-2 text-left flex-1"
-                            >
-                              {ns.done ? (
-                                <CheckSquare className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              ) : (
-                                <Square className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                              )}
-                              <span className={ns.done ? 'line-through text-slate-500' : 'text-slate-300'}>
-                                {ns.text}
-                              </span>
-                            </button>
-                            <button
-                              onClick={() => {
-                                setActiveStepId(step.id);
-                                handleStartNanoSprint(ns.id, ns.text);
-                              }}
-                              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-950 text-indigo-300 border border-indigo-800/80 hover:bg-indigo-900"
-                            >
-                              Sprint 2m
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1056,12 +869,140 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
         </div>
       </div>
 
+      {/* ========================================================================= */}
+      {/* 5. FLOATING & INLINE "CHALLENGE ME" (WHY-FIRST SOCRATIC BUTTON) */}
+      {/* ========================================================================= */}
+      <button
+        onClick={() => {
+          setShowChallengeModal(true);
+          if (!challengeResult) {
+            handleRunChallenge();
+          }
+        }}
+        className="fixed bottom-6 right-6 z-40 px-4 py-3 rounded-full bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs flex items-center gap-2.5 shadow-2xl shadow-rose-600/40 border border-amber-400/30 group hover:scale-105 transition-all"
+        title="Bấm để AI đóng vai trò Co-founder phản biện câu hỏi Why-First"
+      >
+        <ShieldQuestion className="w-4 h-4 text-amber-200 group-hover:rotate-12 transition-transform" />
+        <span>🎯 Challenge me (Thách thức tôi)</span>
+      </button>
+
+      {/* Socratic Challenge Modal */}
+      {showChallengeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-amber-500/50 rounded-2xl max-w-xl w-full p-6 space-y-5 shadow-2xl shadow-amber-500/20 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-amber-400 font-bold text-sm">
+                <Lightbulb className="w-5 h-5" />
+                <span>CỐ VẤN PHẢN BIỆN ĐỘC LẬP (WHY-FIRST SPARRED PARTNER)</span>
+              </div>
+              <button
+                onClick={() => setShowChallengeModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Bạn đang làm một mình và cảm thấy bế tắc hoặc nghi ngờ về tính cấp thiết của công việc hiện tại? Hãy để AI đóng vai trò <strong>Virtual Co-founder</strong> chất vấn logic của bạn:
+            </p>
+
+            {/* Question Quick Chips */}
+            <div className="space-y-2">
+              <label className="text-[11px] text-slate-400 uppercase font-bold">Chọn câu hỏi phản biện nhanh:</label>
+              <div className="grid grid-cols-1 gap-1.5">
+                <button
+                  onClick={() => {
+                    const q = 'Tại sao tính năng này là bắt buộc cho MVP mà không thể hoãn lại sau?';
+                    setChallengeDilemma(q);
+                    handleRunChallenge(q);
+                  }}
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                >
+                  <span>1. Tại sao tính năng này bắt buộc cho MVP?</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    const q = 'Tôi có đang rơi vào bẫy Premature Optimization (tối ưu quá sớm) không?';
+                    setChallengeDilemma(q);
+                    handleRunChallenge(q);
+                  }}
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                >
+                  <span>2. Tôi có đang tối ưu quá sớm thay vì ship sản phẩm?</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                </button>
+
+                <button
+                  onClick={() => {
+                    const q = 'Làm sao để làm một bản thô (dumb version) trong 30 phút để kiểm chứng nhu cầu trước?';
+                    setChallengeDilemma(q);
+                    handleRunChallenge(q);
+                  }}
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                >
+                  <span>3. Có cách nào làm bản thô trong 30 phút không?</span>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                </button>
+              </div>
+            </div>
+
+            {/* Custom Query Input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={challengeDilemma}
+                onChange={(e) => setChallengeDilemma(e.target.value)}
+                placeholder="Nhập câu hỏi khúc mắc của bạn..."
+                className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
+              />
+              <button
+                onClick={() => handleRunChallenge()}
+                disabled={isChallenging}
+                className="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+              >
+                {isChallenging ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                <span>Phản biện</span>
+              </button>
+            </div>
+
+            {/* Challenge Result View */}
+            {challengeResult && (
+              <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/40 space-y-3 text-xs">
+                {challengeResult.whyRootProblem && (
+                  <div>
+                    <div className="text-amber-400 font-bold uppercase text-[10px]">🎯 Vấn Đề Gốc Rễ (Root Why)</div>
+                    <div className="text-slate-200 mt-1">{challengeResult.whyRootProblem}</div>
+                  </div>
+                )}
+
+                {challengeResult.tradeOffsAndRisks && (
+                  <div>
+                    <div className="text-rose-400 font-bold uppercase text-[10px]">⚠️ Đánh Đổi & Bẫy Cần Tránh</div>
+                    <div className="text-slate-300 mt-1">{challengeResult.tradeOffsAndRisks}</div>
+                  </div>
+                )}
+
+                {challengeResult.howRecommendation && (
+                  <div>
+                    <div className="text-emerald-400 font-bold uppercase text-[10px]">🛠️ Lời Khuyên Tinh Gọn Cho Solo Dev</div>
+                    <div className="text-slate-200 font-medium mt-1">{challengeResult.howRecommendation}</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Add Custom Step Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-lg max-w-lg w-full p-5 space-y-4 shadow-xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-white">Thêm Vi Bước Lập Trình Mới</h3>
+              <h3 className="text-sm font-bold text-white">Thêm Vi Bước Lập Trình Mới (≤ 15 Phút)</h3>
               <button
                 onClick={() => setShowAddModal(false)}
                 className="text-slate-500 hover:text-slate-300 text-xs"
@@ -1078,7 +1019,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="VD: Viết test case kiểm tra hàm tính tổng"
-                  className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
@@ -1090,21 +1031,21 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   value={newAction}
                   onChange={(e) => setNewAction(e.target.value)}
                   placeholder="VD: Mở file math.spec.ts và thêm describe('sum')"
-                  className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
                   required
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Thời gian (phút):</label>
+                  <label className="block text-slate-400 mb-1">Thời gian (phút ≤ 15):</label>
                   <input
                     type="number"
                     min={2}
-                    max={30}
+                    max={15}
                     value={newMinutes}
                     onChange={(e) => setNewMinutes(Number(e.target.value))}
-                    className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-white"
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white"
                   />
                 </div>
 
@@ -1113,7 +1054,7 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   <select
                     value={newPrinciple}
                     onChange={(e) => setNewPrinciple(e.target.value as any)}
-                    className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-white"
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white"
                   >
                     <option value="Divide & Conquer">Divide & Conquer</option>
                     <option value="Atomic Commit">Atomic Commit</option>
@@ -1126,13 +1067,13 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Tiêu chuẩn kiểm chứng hoàn thành:</label>
+                <label className="block text-slate-400 mb-1">Tiêu chuẩn kiểm chứng hoàn thành (TDD/Fail-Fast):</label>
                 <input
                   type="text"
                   value={newCriterion}
                   onChange={(e) => setNewCriterion(e.target.value)}
-                  placeholder="VD: npm test chạy pass không lỗi"
-                  className="w-full px-3 py-1.5 rounded bg-slate-950 border border-slate-800 text-white placeholder-slate-600"
+                  placeholder="VD: npm test chạy pass không lỗi trong dưới 3 phút"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-white placeholder-slate-600"
                 />
               </div>
 
@@ -1140,13 +1081,13 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-3 py-1.5 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 rounded bg-indigo-600 hover:bg-indigo-500 font-semibold text-white"
+                  className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 font-semibold text-white shadow-md"
                 >
                   Tạo Vi Bước
                 </button>
@@ -1158,4 +1099,3 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     </div>
   );
 };
-

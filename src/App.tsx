@@ -20,7 +20,7 @@ import { JsonbIndexStrategyView } from './components/JsonbIndexStrategyView';
 export default function App() {
   const [currentContext, setCurrentContext] = useState<ProjectContext>(DEFAULT_PRESET_CONTEXTS[0]);
   const [currentZoom, setCurrentZoom] = useState<ZoomLevel>('micro_focus');
-  const [activeTab, setActiveTab] = useState<string>('horizon');
+  const [activeTab, setActiveTab] = useState<string>('microsteps');
   const [isContextModalOpen, setIsContextModalOpen] = useState(false);
 
   // Prediction Domain Hook

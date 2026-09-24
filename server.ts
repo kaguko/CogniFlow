@@ -17,6 +17,7 @@ import {
   buildSmartFallbackDecision,
   buildSmartFallbackDecomposition,
   buildSmartFallbackGoalPlan,
+  buildSmartFallbackDecompositionSteps,
 } from './src/lib/geminiResilience.ts';
 import {
   rateLimiter,
@@ -363,6 +364,94 @@ Hãy phân tích và trả về đối tượng JSON có các trường:
   } catch (err: any) {
     console.error('Error in /api/socratic-decision:', err);
     return res.json(buildSmartFallbackDecision(req.body?.dilemma || '', req.body?.context));
+  }
+});
+
+/**
+ * POST /api/decompose-task
+ * Takes any complex task from a Solo Dev and instantly decomposes it
+ * into 3-5 atomic micro-steps (each <= 15 mins) with TDD/Fail-Fast verification criteria.
+ */
+app.post('/api/decompose-task', createRateLimitMiddleware('ai_simple', 1), async (req: Request, res: Response) => {
+  try {
+    const { taskTitle, context } = req.body;
+    if (!taskTitle) {
+      return res.status(400).json({ error: 'taskTitle is required' });
+    }
+
+    const cacheKey = `decompose_task:${taskTitle.trim().toLowerCase()}`;
+    const cached = smartCache.get(cacheKey);
+    if (cached.hit && cached.data) {
+      res.setHeader('X-Cache-Status', 'HIT');
+      return res.json(cached.data);
+    }
+    res.setHeader('X-Cache-Status', 'MISS');
+
+    if (!ai) {
+      console.warn('[api/decompose-task] GEMINI_API_KEY not configured, serving smart fallback');
+      const fallback = buildSmartFallbackDecompositionSteps(taskTitle);
+      smartCache.set(cacheKey, fallback, 'simple');
+      return res.json(fallback);
+    }
+
+    const systemInstruction = `
+Bạn là Cố Vấn Tác Vụ Lập Trình (Atomic Decomposition Engine) dành riêng cho Solo Developer / Indie Hacker.
+Nhiệm vụ: Phân rã công việc được giao thành 3-5 vi bước (Micro-steps) cực kỳ sắc bén, mỗi bước KHÔNG QUÁ 15 PHÚT.
+
+Mỗi vi bước PHẢI tuân thủ:
+1. Duration: 5, 10, hoặc 15 phút (tối đa 15 phút).
+2. Single Action: 1 hành động duy nhất, cụ thể tới từng tên file, CLI command hoặc hàm.
+3. Test Criterion (TDD / Fail-Fast): Tiêu chí kiểm chứng rõ ràng xem bước đó PASS hay FAIL trong vòng dưới 3 phút.
+4. Programmer Principle: Một trong 6 nguyên lý: "Divide & Conquer", "Atomic Commit", "Fail Fast", "Boundary Isolation", "YAGNI", "TDD Verification Loop".
+5. Unblock Tip: Gợi ý gỡ rối nhanh nếu gặp bế tắc.
+
+Trả về định dạng JSON thuần:
+{
+  "taskTitle": "${taskTitle}",
+  "microSteps": [
+    {
+      "id": "step_1",
+      "order": 1,
+      "title": "Tên vi bước ngắn gọn (dưới 8 từ)",
+      "durationMinutes": 10,
+      "programmerPrinciple": "Divide & Conquer",
+      "inputRequired": "Điều kiện cần trước khi làm",
+      "singleAction": "Hành động khép kín cụ thể",
+      "testCriterion": "Tiêu chí kiểm chứng Pass/Fail (Fail-fast / TDD)",
+      "unblockTip": "Mẹo vượt qua bế tắc dưới 3 phút",
+      "completed": false
+    }
+  ],
+  "leanAdvice": "1 lời khuyên thực dụng cho Solo Dev để ship nhanh nhất"
+}
+`;
+
+    const prompt = `Phân rã tác vụ này thành các vi bước ≤15 phút: "${taskTitle}"\nNgữ cảnh: ${context ? JSON.stringify(context) : 'Solo Developer MVP'}`;
+
+    try {
+      const response = await generateContentWithFallback(ai, {
+        contents: prompt,
+        taskComplexity: 'simple',
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          temperature: 0.2,
+        },
+      });
+
+      const text = response.text || '';
+      const parsed = JSON.parse(cleanJsonResponse(text));
+      smartCache.set(cacheKey, parsed, 'simple');
+      return res.json(parsed);
+    } catch (aiErr: any) {
+      console.warn('[api/decompose-task] Upstream error, using fallback:', aiErr?.message || aiErr);
+      const fallback = buildSmartFallbackDecompositionSteps(taskTitle);
+      smartCache.set(cacheKey, fallback, 'simple');
+      return res.json(fallback);
+    }
+  } catch (err: any) {
+    console.error('Error in /api/decompose-task:', err);
+    return res.json(buildSmartFallbackDecompositionSteps(req.body?.taskTitle || 'Tác vụ mới'));
   }
 });
 
