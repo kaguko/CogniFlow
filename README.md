@@ -18,27 +18,28 @@
 
 1. [Tổng Quan & Triết Lý Thiết Kế](#-tổng-quan--triết-lý-thiết-kế)
 2. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
-3. [Tính Năng Cốt Lõi](#-tính-năng-cốt-lõi)
-4. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
-5. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
-6. [Tài Liệu API Endpoints](#-tài-liệu-api-endpoints)
-7. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
-8. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
-9. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
-10. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-11. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+3. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
+4. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
+5. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
+6. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
+7. [Tài Liệu API Endpoints](#-tài-liệu-api-endpoints)
+8. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
+9. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+10. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
+11. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+12. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
 ## 🎯 Tổng Quan & Triết Lý Thiết Kế
 
-**SymFlowAge** được xây dựng để giải quyết hai vấn đề nhức nhối nhất của kỹ sư phần mềm và người làm việc trí óc:
+**SymFlowAge** được xây dựng để giải quyết hai vấn đề nhức nhối nhất của kỹ sư phần mềm, Solo Developer và Indie Hacker:
 1. **Analysis Paralysis (Tê liệt phân tích)**: Khi đối mặt với các dự án lớn, kiến trúc phức tạp hoặc nợ kỹ thuật chồng chất, não bộ bị quá tải nhận thức và không thể bắt đầu hành động đầu tiên.
-2. **Goal Drift (Trôi dạt mục tiêu)**: Hàng ngày bận rộn với các tác vụ vụn vặt nhưng dần mất liên kết với các mục tiêu dài hạn quan trọng.
+2. **Goal Drift & Rabbit Holes (Trôi dạt mục tiêu & Sa đà bẫy kỹ thuật)**: Hàng ngày bận rộn với các tác vụ vụn vặt, over-engineering hoặc tối ưu hóa quá sớm nhưng dần xa rời mục tiêu sống còn là ship sản phẩm ra thị trường.
 
 ### 🧠 Triết Lý Lập Trình Viên (Programmer Principles)
 Mọi tác vụ trong SymFlowAge đều được phân rã theo 6 nguyên lý kỹ thuật:
-- **Divide & Conquer**: Phân rã bài toán lớn thành các đơn vị công việc độc lập.
+- **Divide & Conquer**: Phân rã bài toán lớn thành các đơn vị công việc độc lập $\le 15$ phút.
 - **Atomic Commit**: Mỗi bước hoàn thành phải khép kín, có thể kiểm chứng độc lập và bàn giao ngay.
 - **Fail Fast**: Thiết lập phép thử để phát hiện sai sót sớm nhất có thể trong vòng dưới 3 phút.
 - **Boundary Isolation**: Tách biệt ranh giới logic chính khỏi các phụ thuộc ngoại vi.
@@ -67,13 +68,44 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
 ┌──────────────────────────────▼──────────────────────────────┐
 │ 🔬 MICRO FOCUS (Tầng 3: Vi Bước 5-15 Phút & Nano-Steps 2P)  │
 │    - Vi bước nguyên tử có input, action & test criterion   │
+│    - Semantic Rabbit Hole Detector & Socratic "Challenge Me"│
 │    - AI Decompose thành 3 nano-steps 2 phút khi bị tắc     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## ⚡ Tính Năng Cốt Lõi
+## 🚀 Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)
+
+### 1. 🎛️ Bộ Presets Thông Minh 1-Click (Smart Context Presets)
+Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước hành động mẫu được chuẩn hóa theo thực chiến:
+- **🚀 Launch MVP SaaS Trong 7 Ngày**: Luồng Stripe Checkout + Idempotent Webhook + Auth Guard + Core MVP CRUD.
+- **🤖 Solo AI Tool Kiếm $1K MRR Đầu Tiên**: Cấu hình Smart Caching + Streaming AI phản hồi < 200ms.
+- **🛠️ Khắc Phục Crash & Rò Rỉ Kết Nối Trước Giờ Launch Product Hunt**: Kỹ thuật cô lập ranh giới Heap Dump và Smoke Test.
+- **⚡ Tái Cấu Trúc Module Auth Spaghetti 2,500 Dòng**: Ứng dụng Characterization Tests và Strangler Fig Pattern.
+- **🗄️ Tối Ưu PostgreSQL Connection Pool & Tránh OOM Pods**: Cấu hình PgBouncer & Indexing JSONB GIN chịu tải 5,000 QPS.
+
+### 2. 🕳️ Động Cơ Phân Tích Ngữ Nghĩa & Phát Hiện "Rabbit Hole" (Semantic Drift Engine)
+- So sánh ngữ nghĩa giữa danh sách tác vụ đang làm và Mục tiêu cốt lõi (Core Goal / MVP Vision).
+- Tự động nhận diện và gắn nhãn 5 bẫy tâm lý phổ biến của lập trình viên:
+  - 🛑 `over_engineering`: Dựng kiến trúc quá phức tạp khi chưa có khách hàng đầu tiên.
+  - 🛑 `premature_optimization`: Tối ưu hóa microsecond trước khi kiểm chứng thị trường.
+  - 🛑 `bike_shedding`: Tốn nhiều ngày chỉnh font chữ, logo, animation thay vì làm tính năng cốt lõi.
+  - 🛑 `reinventing_wheel`: Tự viết lại Auth/ORM/Datepicker từ đầu.
+  - 🛑 `distraction_task`: Tác vụ phụ phát sinh không đóng góp vào doanh thu/mục tiêu.
+- **Cảnh báo trực quan**: Tự động chuyển thanh tiến độ sang **Màu Vàng Cảnh Báo** khi độ tập trung $< 50\%$ hoặc có từ 2 Rabbit Holes trở lên, kèm giải thích lý do vì sao là bẫy và gợi ý phương án tinh gọn thay thế.
+
+### 3. ⚡ Phân Rã Task Siêu Tốc Bằng Gemini Flash (Tier 1 Powered)
+- Bẻ nhỏ bất kỳ task phức tạp nào thành các vi bước $\le 15$ phút ngay trên trạm làm việc.
+- Định tuyến trực tiếp tới **Gemini Flash-Lite** với độ trễ cực thấp (~140ms - 300ms), tiết kiệm **88% chi phí token**.
+
+### 4. 🎯 "Challenge Me" – Cố Vấn Phản Biện Socratic (Gemini Pro Tier 3)
+- Nút bấm nổi kích hoạt Virtual Co-founder chất vấn logic kỹ thuật và tính cấp thiết của tính năng.
+- Sử dụng **Gemini Pro** để thực hiện Deep Reasoning, bóc tách rủi ro kinh doanh, thách thức bẫy tối ưu sớm và hướng dẫn tạo bản thô (dumb version) trong 30 phút.
+
+---
+
+## ⚡ Hệ Thống Tính Năng Toàn Diện
 
 ### 1. 🔮 Predictive Horizon View (Dự Báo Ngữ Cảnh)
 - Phân tích ngữ cảnh dự án (ngôn ngữ lập trình, kiến trúc, mức năng lượng, ma sát hiện tại).
@@ -123,58 +155,6 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
 - **Burndown Velocity Chart**: Trực quan hóa vận tốc đốt cháy khối lượng vi bước theo thời gian (Ideal Steps/Minutes vs Actual Velocity) giúp triệt tiêu cảm giác mơ hồ.
 - **Audio Report Generator**: Tích hợp nút Text-to-Speech phát báo cáo âm thanh tóm tắt xu hướng và trạng thái vận tốc nhận thức.
 
-### 8. ⚡ Khắc Phục Thắt Cổ Chai Hiệu Năng PostgreSQL & Trụ Cột 4: Cache-aside & Tombstone Invalidation
-- **1. Trụ Cột 4: Cache-aside & Tombstone Invalidation (Redis + PostgreSQL)**:
-  - **Flow 1 (Read-through)**: `get(key)` $\rightarrow$ Cache Miss $\rightarrow$ `SELECT` PostgreSQL DB $\rightarrow$ nhận `data` $\rightarrow$ `Insert best-effort` lên Redis (kèm kiểm tra Tombstone Shield).
-  - **Flow 2 (Invalidation Flow)**: Worker `UPDATE` PostgreSQL DB $\rightarrow$ **`SET Tombstone (TTL)`** (Bia mộ thời gian sống 5–15s) $\rightarrow$ `DELETE Cache Entry`.
-  - **Technical Rationale**: Triệt tiêu triệt để Async Race-Condition trong môi trường phân tán khi một luồng đọc chậm lấy dữ liệu cũ từ DB và cố tình ghi đè lên Redis sau khi luồng ghi đã cập nhật DB. Tombstone chặn đứng các thao tác ghi dữ liệu cũ lên cache mới, bảo toàn tính nhất quán 100%.
-- **2. Chiến Lược Lập Chỉ Mục JSONB**:
-  - **GIN (`jsonb_ops`)**: Hỗ trợ toàn diện các toán tử `@>`, `?`, `?|`, `?&` khi không biết trước schema.
-  - **GIN (`jsonb_path_ops`)**: Tối ưu riêng cho toán tử bao hàm `@>`, giảm **70% dung lượng đĩa** so với `jsonb_ops`.
-  - **Expression B-Tree**: Lập chỉ mục siêu nhỏ trên từng scalar key cố định (`(metadata->>'priority')`), hỗ trợ các toán tử `=`, `<`, `>`, `BETWEEN`, `IN` siêu tốc.
-  - **Partial Index**: Chỉ index các bản ghi thỏa mãn điều kiện lọc tĩnh (`WHERE is_active = true`), tối thiểu hóa chi phí lưu trữ và ghi đĩa.
-  - **Phát hiện & Cảnh báo Anti-Pattern**: Cảnh báo tức thì bẫy hiệu năng khi tạo GIN Index nhưng lại truy vấn bằng toán tử `->>` (khiến PostgreSQL bỏ qua Index và rơi vào Sequential Scan).
-- **3. Chống Write Bottlenecks & Lock Contention**:
-  - Giải quyết bài toán Deadlock khi cập nhật concurrent trên hệ thống hàng đợi bằng kỹ thuật `FOR NO KEY UPDATE` kết hợp `SKIP LOCKED`.
-  - Cho phép các giao dịch kiểm tra Foreign Key và truy vấn đọc chạy song song 100% không bị block.
-- **4. Tránh Thuế TOAST (The TOAST Tax)**:
-  - Triệt tiêu chi phí CPU giải nén các tài liệu JSONB $> 8\text{KB}$ bằng cách trích xuất các trường hay query thành **Stored Generated Columns** (`GENERATED ALWAYS AS (metadata->>'key') STORED`).
-  - Giúp PostgreSQL Planner thu thập thống kê Histogram chính xác và đọc dữ liệu trực tiếp trong Main Tuple mà không phải đọc vùng nhớ ngoài luồng TOAST.
-
-### 9. 🔀 Ma Trận Lựa Chọn Hàng Đợi Tác Vụ (Task Queue Matrix & ARQ Async Redis)
-- **Bảng ma trận so sánh 4 mô hình hàng đợi**:
-  - **FastAPI BackgroundTasks**: *In-process Threadpool / Event Loop*, Volatile (mất khi crash), RAM cực thấp (~12MB), phù hợp log nhẹ & fire-and-forget.
-  - **Postgres SKIP LOCKED (`RECOMMENDED FOR ACID`)**: *Polling DB Locks*, ACID Persistent, RAM thấp (~45MB), tối ưu cho các tác vụ tài chính cần tính nguyên tử cao cùng state DB.
-  - **ARQ (Async Redis) (`RECOMMENDED FOR I/O`)**: *Native Async Event Loop (`asyncio`)*, Redis Persistent (RDB/AOF), **tối ưu I/O siêu việt (~28MB RAM - Tiết kiệm 93% RAM so với Celery)**, xử lý hơn **35,000+ QPS** cho Webhooks, Batch Embeddings, Email Delivery và AI Streaming.
-  - **Celery**: *Distributed Multi-process*, Broker Durable (RabbitMQ/Redis), nặng nề và tốn RAM (~420MB), dành riêng cho CPU-heavy tasks & multi-node workflows.
-- **Interactive ARQ Dispatcher Lab**: Cho phép trực tiếp Enqueue các tác vụ Async I/O với độ trễ Event Loop cực thấp ($\approx 0.12\text{ms}$) và theo dõi Live Pipeline.
-
-### 10. 🐳 Đóng Gói Docker An Toàn (Non-Root Hardened) & Phân Bổ Tài Nguyên Chuẩn Xác (Production Sizing)
-- **1. Bọc Code An Toàn (Non-Root Hardened)**:
-  - Dockerfile Multi-Stage (`builder` + `runner`) siêu nhẹ và bảo mật cao.
-  - Tạo tài khoản người dùng riêng `appuser:appgroup (UID/GID: 10001:10001)`, không chạy quyền Root nhằm **triệt tiêu nguy cơ hacker khai thác lỗ hổng để chiếm quyền điều khiển máy chủ Host**.
-  - Sử dụng `dumb-init` (PID 1) để điều phối và chuyển tiếp tín hiệu `SIGTERM`/`SIGINT` chính xác, dọn sạch zombie process.
-- **2. Thuê Vừa Đủ Đầu Bếp (Gunicorn Workers Sizing)**:
-  - Áp dụng công thức vàng: $\text{Workers} = (2 \times \text{CPU Cores}) + 1$. Khai thác tối đa năng lực I/O song song mà **không làm quá tải CPU do Context-Switching**.
-  - Cơ chế tự động khởi động lại worker sau 10,000 requests (`max_requests = 10000`, `max_requests_jitter = 2000`) để chống rò rỉ bộ nhớ (Memory Leak).
-- **3. Chia Vòi Nước (DB Connection Pool Sizing) Chống Sập Database**:
-  - Phân bổ `DB_POOL_SIZE` và `DB_MAX_OVERFLOW` cho từng worker sao cho tổng số kết nối toàn cụm luôn thấp hơn `max_connections` của PostgreSQL.
-  - Dành sẵn 15–25 slots dự phòng cho DBA, Migrations và Healthchecks, **loại bỏ 100% lỗi sập DB do cạn kiệt Connection Slots**.
-- **4. Interactive Docker & Sizing Lab**: Bảng điều khiển giả lập phần cứng (CPU Cores, Container RAM, PostgreSQL max_connections, Pod Replicas) với đánh giá tải và sinh mã `Dockerfile`, `gunicorn.conf.py`, `docker-compose.yml` 1-click.
-
-### 11. ⚡ Rate Limiting, Caching Thông Minh & Định Tuyến Model Nhẹ (Flash/Lite First)
-- **1. Ưu Tiên Model Nhẹ Flash/Lite Ngay Từ Đầu (Intelligent Model Routing)**:
-  - **Tier 1 (Lightweight - `gemini-3.1-flash-lite`)**: Định tuyến ngay các tác vụ đơn giản (phân rã vi bước $\le 15$ phút, đo ma sát nhận thức, format JSON, gắn tag semantic). Độ trễ cực thấp **~140ms**, tiết kiệm **88% chi phí và token**.
-  - **Tier 2 (Balanced - `gemini-2.5-flash` / `gemini-3.8-flash`)**: Phân tích dự đoán 3 Dòng thời gian, RAG QA Copilot, phát hiện điểm nghẽn hệ thống.
-  - **Tier 3 (Deep Reasoning - `gemini-2.5-pro`)**: Thiết kế kiến trúc phân tán lớn, tổng hợp mã nguồn đa tầng.
-- **2. Caching Thông Minh (Exact SHA-256 + Adaptive TTL)**:
-  - Chuẩn hóa prompt và băm khóa SHA-256.
-  - Phản hồi tức thì **&lt; 5ms** khi Cache Hit, triệt tiêu 100% chi phí token và giải phóng hoàn toàn áp lực tải lên upstream LLM.
-  - **Adaptive TTL**: TTL ngắn (10 phút) cho vi bước biến động, TTL dài (120 phút) cho các phân tích kiến trúc nền tảng.
-- **3. Token Bucket Rate Limiting (Multi-Tier Quotas)**:
-  - Kiểm soát lưu lượng theo IP / Client Token: `60 req/min` (AI Simple), `30 req/min` (AI Standard), `120 req/min` (General API).
-  - Trả về chuẩn header `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset` và mã `429 Too Many Requests (Retry-After)` bảo vệ backend.
-
 ---
 
 ## 🛠️ Kiến Trúc Kỹ Thuật (Tech Stack)
@@ -184,14 +164,14 @@ Hệ thống cho phép chuyển đổi mượt mà giữa 3 tầng nhận thức
 | **Frontend Framework** | React 19 + TypeScript | SPA nhanh, hiện đại, tuân thủ functional components & custom hooks |
 | **Styling** | Tailwind CSS v4 | Dark mode chuẩn mực với tone màu Slate/Indigo cao cấp |
 | **Charts & Graphs** | Recharts 3.x, Motion | Biểu đồ LineChart xu hướng năng suất & AreaChart Burndown mượt mà |
-| **Rate Limit & Smart Cache** | Token Bucket Algorithm & Adaptive SHA-256 Cache | Header chuẩn `X-RateLimit-*`, `429 Retry-After`, Cache Hit &lt;5ms |
+| **Rate Limit & Smart Cache** | Token Bucket Algorithm & Adaptive SHA-256 Cache | Header chuẩn `X-RateLimit-*`, `429 Retry-After`, Cache Hit < 5ms |
 | **Container & Runtime** | Docker Multi-Stage (Non-Root), Gunicorn, dumb-init | Chạy dưới user `10001:10001`, tự động quản lý workers và connection pool |
 | **Task Queue & Cache** | ARQ (Async Redis) + Redis 7 | Hàng đợi tác vụ Native Async Event Loop 35,000+ QPS & Cache-aside Tombstone |
 | **Database & ORM** | PostgreSQL 16 + Drizzle ORM | Hỗ trợ JSONB indexing, Generated Columns, Lock contention bypass & vector(768) |
 | **Icons** | Lucide React | Hệ thống icon tối giản, đồng bộ |
 | **Server Backend** | Express + TSX (Node.js) & FastAPI/Gunicorn | Full-stack tích hợp sẵn Vite middlewares |
 | **AI SDK** | `@google/genai` (v2.4.0) | Gọi các mô hình Gemini hiện đại nhất |
-| **AI Models (Tiered)** | Gemini Flash & Lite Family | `gemini-3.1-flash-lite` (Tier 1), `gemini-2.5-flash` (Tier 2), `gemini-2.5-pro` (Tier 3) |
+| **AI Models (Tiered)** | Gemini Flash & Pro Family | `gemini-3.1-flash-lite` (Tier 1), `gemini-2.5-flash` (Tier 2), `gemini-2.5-pro` (Tier 3) |
 | **Vector Embeddings** | `text-embedding-004` & Fallback Engine | 768 dimensions cho tìm kiếm tương đồng ngữ nghĩa |
 
 ---
@@ -212,14 +192,14 @@ Dự án áp dụng cấu trúc Domain-Driven Clean Architecture, mỗi domain m
 │   ├── projectContext/          # Domain: Quản lý Context dự án & Modal cấu hình
 │   ├── goal/                    # Domain: Quản lý Long-Term Goal Canvas & Drift Score
 │   ├── prediction/              # Domain: Predictive Horizon View & Timeline Hook
-│   ├── microStep/               # Domain: Quản lý Vi bước 5-15 phút & Nano-steps
+│   ├── microStep/               # Domain: Quản lý Vi bước 5-15 phút, Rabbit Hole & Pomodoro
 │   ├── bottleneck/              # Domain: Radar điểm nghẽn & Ma trận rủi ro
-│   ├── decisionCopilot/         # Domain: Why-First Socratic Decision Copilot
+│   ├── decisionCopilot/         # Domain: Why-First Socratic Decision Copilot (Gemini Pro)
 │   ├── behavioral/              # Domain: Phân tích hành vi, Recharts LineChart & Burndown
 │   │
 │   ├── components/              # Shell UI: Header, Sidebar, ZoomController, RAG View
 │   ├── common/                  # Các tiện ích và components dùng chung
-│   ├── data/                    # Preset contexts & Mock prediction data dự phòng
+│   ├── data/                    # Smart presets (SaaS, AI Tool, Refactor, PgBouncer)
 │   ├── db/                      # Drizzle ORM schema, pgvector connection & RAG queries
 │   │   ├── schema.ts            # Định nghĩa bảng users, notes & pgvector(768)
 │   │   ├── index.ts             # Kết nối Database client
@@ -229,7 +209,7 @@ Dự án áp dụng cấu trúc Domain-Driven Clean Architecture, mỗi domain m
 │   │   ├── firebase.ts          # Cấu hình Firebase Web Client
 │   │   └── firebase-admin.ts    # Cấu hình Firebase Admin Server-side
 │   ├── types/                   # Định nghĩa TypeScript models toàn hệ thống & Ambient JSON types
-│   └── utils/                   # Helpers: định dạng thời gian, tính toán điểm số
+│   └── utils/                   # Helpers: định dạng thời gian, audio alert synthesizer
 ├── package.json                 # Scripts & dependencies
 ├── metadata.json                # Metadata & permissions của AI Studio
 ├── tsconfig.json                # Cấu hình TypeScript (Vite bundler mode)
@@ -244,40 +224,27 @@ Tất cả các API được triển khai tại server backend (`server.ts`):
 
 ### 1. `POST /api/predict`
 Dự đoán 3 dòng thời gian, vi bước hành động, điểm nghẽn và ma trận rủi ro.
-- **Request Body**:
-  ```json
-  {
-    "context": {
-      "title": "Refactor Auth sang OAuth2",
-      "description": "Tách token provider độc lập",
-      "techStack": ["React", "TypeScript", "Node.js"],
-      "energyLevel": "high",
-      "currentFriction": "Sợ làm gãy luồng refresh token cũ"
-    }
-  }
-  ```
-- **Response**: Trả về `PredictionPayload` chứa `timelines`, `microSteps`, `bottlenecks`, `riskMatrix`, `behavioralInsights`.
 
-### 2. `POST /api/decompose`
-Phân rã 1 vi bước bị bế tắc thành 3 nano-steps (mỗi bước ~2 phút).
-- **Request Body**: `{ "stepTitle": "string", "contextFriction": "string" }`
-- **Response**: `{ "nanoSteps": [...], "unblockMantra": "string" }`
+### 2. `POST /api/decompose-task`
+Phân rã 1 task bất kỳ thành danh sách các vi bước $\le 15$ phút bằng **Gemini Flash (Tier 1)**.
+- **Request Body**: `{ "taskTitle": "Tích hợp Stripe Checkout", "context": { "goalTitle": "Launch SaaS" } }`
+- **Response**: `{ "microSteps": [...] }`
 
-### 3. `POST /api/socratic-decision`
-Phân tích quyết định kỹ thuật theo tư duy First Principles.
-- **Request Body**: `{ "dilemma": "Nên dùng PostgreSQL pgvector hay Pinecone?", "context": {...} }`
+### 3. `POST /api/semantic-drift-analysis`
+Phân tích ngữ nghĩa để phát hiện các bẫy Rabbit Hole và tính toán độ thẳng hàng với mục tiêu cốt lõi.
+- **Request Body**: `{ "coreGoalTitle": "Launch MVP SaaS", "tasks": [{ "id": "1", "title": "Setup Redux" }] }`
+- **Response**: `{ "overallAlignmentPercent": 40, "detectedRabbitHoles": [...], "summaryAnalysis": "..." }`
+
+### 4. `POST /api/socratic-decision`
+Phân tích quyết định kỹ thuật First Principles hoặc chạy chế độ **"Challenge Me" (Gemini Pro Tier 3)**.
+- **Request Body**: `{ "dilemma": "Có nên dựng microservices cho MVP?", "context": {...} }`
 - **Response**: `{ "whyRootProblem": "...", "alternativesEvaluated": [...], "tradeOffsAndRisks": "...", "howRecommendation": "..." }`
 
-### 4. `POST /api/goals/plan`
+### 5. `POST /api/goals/plan`
 Tự động sinh cột mốc theo Quý và các vi bước khởi động cho một mục tiêu dài hạn.
-- **Request Body**: `{ "goalTitle": "string", "category": "engineering", "horizon": "1_year" }`
-- **Response**: `{ "refinedVision": "...", "milestones": [...], "immediateMicroSteps": [...] }`
 
-### 5. `GET /api/notes` & `POST /api/notes`
-Lấy danh sách hoặc tạo ghi chú kỹ thuật mới. Khi tạo mới, backend tự động gọi API embedding để lưu vector 768 chiều vào PostgreSQL.
-
-### 6. `POST /api/notes/search` & `POST /api/notes/rag-ask`
-Tìm kiếm ngữ nghĩa tài liệu và hỏi đáp RAG grounded trực tiếp từ kho tri thức cá nhân.
+### 6. `GET /api/notes`, `POST /api/notes/search` & `POST /api/notes/rag-ask`
+Quản lý ghi chú kỹ thuật, trích xuất embedding pgvector(768) và hỏi đáp RAG grounded.
 
 ---
 
@@ -288,7 +255,7 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 1. **Chuỗi Fallback Mô Hình Tự Động (Model Fallback Chain)**:
    - Ưu tiên các mô hình có độ sẵn sàng cao: `gemini-2.5-flash` ➔ `gemini-flash-latest` ➔ `gemini-3.1-flash-lite` ➔ `gemini-3.8-flash`.
 2. **Jittered Exponential Backoff**:
-   - Khi gặp mã lỗi tạm thời `503 UNAVAILABLE` (quá tải do lưu lượng tăng đột biến) hoặc `429 RATE_LIMIT`, hệ thống tự động thử lại kèm khoảng trễ ngẫu nhiên trước khi chuyển sang mô hình tiếp theo.
+   - Khi gặp mã lỗi tạm thời `503 UNAVAILABLE` hoặc `429 RATE_LIMIT`, hệ thống tự động thử lại kèm khoảng trễ ngẫu nhiên trước khi chuyển sang mô hình tiếp theo.
 3. **Smart Synthesized Prediction Fallback**:
    - Trong trường hợp toàn bộ mạng AI bên ngoài gặp sự cố mạng hoặc không có API key, bộ sinh thông minh sẽ tự động tổng hợp dữ liệu chuẩn xác dựa trên context của người dùng. Ứng dụng **không bao giờ bị crash hoặc hiển thị màn hình trắng**.
 
@@ -338,8 +305,6 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 | `DATABASE_URL` | Tùy chọn | URL kết nối PostgreSQL (dùng cho pgvector semantic search) |
 | `VITE_FIREBASE_*` | Tùy chọn | Các cấu hình Firebase Authentication (nếu bật chế độ đăng nhập tài khoản) |
 
-*Ghi chú: Nếu chưa có `GEMINI_API_KEY`, SymFlowAge sẽ tự động chuyển sang chế độ Mô Phỏng Dự Báo Thông Minh (Smart Synthesized Mode) để bạn có thể trải nghiệm toàn bộ giao diện mà không gặp bất kỳ lỗi gián đoạn nào.*
-
 ---
 
 ## 🧪 Kiểm Thử & Đóng Gói (Build & Verification)
@@ -359,24 +324,14 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 
 ---
 
-## 💡 Mẹo Sử Dụng Hiệu Quả (Pro Tips)
-
-1. **Khi cảm thấy lười hoặc bế tắc**: Nhấn vào nút **"Gỡ rối"** trên bất kỳ vi bước nào. 3 việc siêu nhỏ trong 2 phút sẽ giúp não bạn vượt qua ngưỡng ma sát tĩnh ban đầu.
-2. **Theo dõi Biểu Đồ Năng Suất Recharts**: Kiểm tra tương quan giữa đường Tập Trung (Xanh) và Ma Sát (Vàng). Khi hai đường tách xa nhau là bạn đang ở trong trạng thái Dòng Chảy tối ưu (Hyperfocus).
-3. **Theo dõi Drift Score**: Nếu điểm trôi dạt vượt quá 40%, hãy mở **Tầng 1 (Goal Canvas)** để gắn lại các vi bước vào đúng mục tiêu then chốt của Quý.
-4. **Sử dụng Decision Copilot trước khi code**: Trước khi bắt đầu một đợt refactor lớn hoặc chọn thư viện mới, hãy nhập phân vân vào tab **"Quyết Định Why-First"** để nhìn rõ các đánh đổi và rủi ro tiềm ẩn.
-
----
-
 ## 👨‍💻 Tác Giả & Bản Quyền (Author & Copyright)
 
 - **Tác giả / Sáng lập**: **Lê Quang Huy**
-- **Dự án**: **CogniFlow — Semantic Flow Platform**
+- **Dự án**: **SymFlowAge — Contextual Future Prediction & Micro-Step Engine**
 - **Bản quyền**: © 2026 **Lê Quang Huy**. Tất cả các quyền được bảo lưu (*All rights reserved*).
-- **Mục đích**: Nền tảng điều hướng dòng chảy nhận thức và hỗ trợ ra quyết định kỹ thuật chuyên sâu theo nguyên lý "Why-First" & Domain-Driven Design (DDD).
+- **Mục đích**: Nền tảng điều hướng dòng chảy nhận thức, chống phân tâm / Rabbit Hole và hỗ trợ ra quyết định kỹ thuật chuyên sâu cho lập trình viên và Indie Hackers.
 
 ---
 
 *Phát triển với tinh thần kỹ sư thực chiến — Giảm tải nhận thức, tập trung tuyệt đối vào vi bước tiếp theo.*
 *© 2026 Lê Quang Huy. All rights reserved.*
-
