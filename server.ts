@@ -189,6 +189,48 @@ async function generateAgentDecomposition(goalTitle: string, technicalContext: u
   }
 }
 
+async function generateAgentDecision(dilemma: string, context: unknown) {
+  if (!ai) return buildSmartFallbackDecision(dilemma, context);
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: `Phân tích quyết định kỹ thuật sau theo First Principles.\nDilemma: ${dilemma}\nContext: ${JSON.stringify(context || {})}`,
+      taskComplexity: 'complex',
+      config: {
+        systemInstruction:
+          'Trả về JSON thuần với dilemma, whyRootProblem, alternativesEvaluated, tradeOffsAndRisks, howRecommendation, verificationBasis, socraticQuestions và microActionPlan.',
+        responseMimeType: 'application/json',
+        temperature: 0.2,
+      },
+    });
+    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+  } catch (error: any) {
+    console.warn('[agent/socratic-decision] fallback:', error?.message || error);
+    return buildSmartFallbackDecision(dilemma, context);
+  }
+}
+
+async function generateAgentPrediction(context: any) {
+  if (!ai) return buildSmartFallbackPrediction(context);
+
+  try {
+    const response = await generateContentWithFallback(ai, {
+      contents: `Dự báo ba lộ trình thực thi cho context sau: ${JSON.stringify(context)}`,
+      taskComplexity: 'medium',
+      config: {
+        systemInstruction:
+          'Trả về JSON thuần với strategicWhySummary, timelines gồm đúng ba pathType optimal/drift/bottleneck, microSteps, bottlenecks, riskMatrix và behavioralInsights. Mỗi timeline phải có probability, milestones và consequence.',
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    });
+    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+  } catch (error: any) {
+    console.warn('[agent/predict] fallback:', error?.message || error);
+    return buildSmartFallbackPrediction(context);
+  }
+}
+
 app.post(
   '/api/v1/agent/decompose',
   createRateLimitMiddleware('ai_simple', 1),
@@ -248,6 +290,47 @@ app.post(
           : status === 'WARN'
           ? 'Agent output needs human review before execution.'
           : 'Agent output remains aligned with the original goal.',
+    });
+  }
+);
+
+app.post(
+  '/api/v1/agent/socratic-decision',
+  createRateLimitMiddleware('ai_standard', 1),
+  requireAgentAuth,
+  async (req: AgentRequest, res: Response) => {
+    const dilemma = typeof req.body?.dilemma === 'string' ? req.body.dilemma.trim() : '';
+    if (!dilemma) return res.status(400).json({ error: 'dilemma is required' });
+
+    const result = await generateAgentDecision(dilemma, req.body?.context);
+    return res.json({
+      contractVersion: 'agent.v1',
+      requestId: randomUUID(),
+      agentId: req.agentId,
+      ...result,
+    });
+  }
+);
+
+app.post(
+  '/api/v1/agent/predict',
+  createRateLimitMiddleware('ai_standard', 1),
+  requireAgentAuth,
+  async (req: AgentRequest, res: Response) => {
+    const context = req.body?.context;
+    if (!context || typeof context.title !== 'string' || !context.title.trim()) {
+      return res.status(400).json({ error: 'context.title is required' });
+    }
+
+    const startedAt = Date.now();
+    const result = await generateAgentPrediction(context);
+    const predictionId = persistPredictionBestEffort(req as AuthRequest, context, result, startedAt);
+    return res.json({
+      contractVersion: 'agent.v1',
+      requestId: randomUUID(),
+      agentId: req.agentId,
+      ...result,
+      predictionId,
     });
   }
 );

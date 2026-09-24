@@ -47,4 +47,53 @@ test.describe('Versioned Agent API', () => {
     expect(body.decision).toBe('BLOCK');
     expect(body.driftScore).toBeGreaterThanOrEqual(40);
   });
+
+  test('returns a Socratic architecture critique contract', async ({ request }) => {
+    const response = await request.post('/api/v1/agent/socratic-decision', {
+      headers: { ...agentHeaders, 'x-agent-id': 'architect-agent' },
+      data: {
+        dilemma: 'Có nên dựng microservices cho MVP chưa có traffic?',
+        context: { goal: 'Ship MVP trong 30 ngày' },
+      },
+    });
+    const body = await response.json();
+
+    expect(response.ok()).toBe(true);
+    expect(body.contractVersion).toBe('agent.v1');
+    expect(body.agentId).toBe('architect-agent');
+    expect(body.tradeOffsAndRisks).toBeTruthy();
+    expect(body.alternativesEvaluated.length).toBeGreaterThan(0);
+  });
+
+  test('returns three predictive horizon paths and risk data', async ({ request }) => {
+    const response = await request.post('/api/v1/agent/predict', {
+      headers: agentHeaders,
+      data: {
+        context: {
+          title: 'Ship MVP SaaS',
+          currentFriction: 'Chưa rõ bước triển khai đầu tiên',
+          energyLevel: 'medium',
+        },
+      },
+    });
+    const body = await response.json();
+    const pathTypes = body.timelines.map((timeline: { pathType: string }) => timeline.pathType).sort();
+
+    expect(response.ok()).toBe(true);
+    expect(body.contractVersion).toBe('agent.v1');
+    expect(body.predictionId).toBeTruthy();
+    expect(pathTypes).toEqual(['bottleneck', 'drift', 'optimal']);
+    expect(body.riskMatrix.length).toBeGreaterThan(0);
+    expect(body.bottlenecks.length).toBeGreaterThan(0);
+  });
+
+  test('validates required fields for decision and prediction', async ({ request }) => {
+    const [decisionResponse, predictionResponse] = await Promise.all([
+      request.post('/api/v1/agent/socratic-decision', { headers: agentHeaders, data: {} }),
+      request.post('/api/v1/agent/predict', { headers: agentHeaders, data: { context: {} } }),
+    ]);
+
+    expect(decisionResponse.status()).toBe(400);
+    expect(predictionResponse.status()).toBe(400);
+  });
 });
