@@ -1000,20 +1000,30 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 5. FLOATING "CHALLENGE ME" (GEMINI PRO TIER 3 WHY-FIRST SOCRATIC) */}
+      {/* 5. FLOATING "CHALLENGE ME" (GEMINI PRO TIER 3 WHY-FIRST SOCRATIC - 100% PASSIVE) */}
       {/* ========================================================================= */}
       <button
         onClick={() => {
           setShowChallengeModal(true);
-          if (!challengeResult) {
-            handleRunChallenge();
-          }
+          // 100% Passive: DO NOT auto-execute API call upon opening modal
         }}
-        className="fixed bottom-6 right-6 z-40 px-4 py-3 rounded-full bg-gradient-to-r from-amber-600 to-rose-600 hover:from-amber-500 hover:to-rose-500 text-white font-bold text-xs flex items-center gap-2.5 shadow-2xl shadow-rose-600/40 border border-amber-400/30 group hover:scale-105 transition-all"
-        title="Bấm để AI Gemini Pro đóng vai trò Co-founder phản biện Why-First"
+        className={`fixed bottom-6 right-6 z-40 px-3.5 py-2.5 rounded-full font-bold text-xs flex items-center gap-2 shadow-xl border transition-all ${
+          isTimerRunning
+            ? 'bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-white border-slate-700/60 opacity-50 hover:opacity-100 backdrop-blur-sm'
+            : 'bg-gradient-to-r from-slate-900 to-amber-950 hover:from-amber-900 hover:to-rose-900 text-amber-200 hover:text-white border-amber-500/40 shadow-amber-950/30'
+        }`}
+        title={
+          isTimerRunning
+            ? 'Flow State đang hoạt động · Cố vấn phản biện ở chế độ tĩnh (Passive)'
+            : 'Bấm khi cần AI Gemini Pro phản biện Why-First (Hoàn toàn thụ động)'
+        }
       >
-        <ShieldQuestion className="w-4 h-4 text-amber-200 group-hover:rotate-12 transition-transform" />
-        <span>🎯 Challenge me (Gemini Pro)</span>
+        <ShieldQuestion className="w-4 h-4 text-amber-300" />
+        <span className="hidden sm:inline">🎯 Challenge me (Passive)</span>
+        <span className="sm:hidden">🎯 Phản biện</span>
+        {isTimerRunning && (
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="Flowing" />
+        )}
       </button>
 
       {/* Socratic Challenge Modal */}
@@ -1033,13 +1043,20 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center gap-2 p-2 rounded bg-amber-950/40 border border-amber-500/30 text-[11px] text-amber-300 font-mono">
-              <Cpu className="w-3.5 h-3.5 text-amber-400" />
-              <span>Định tuyến riêng biệt tới Gemini Pro: Suy luận đa chiều & bóc tách bẫy kỹ thuật.</span>
+            <div className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-300 font-mono">
+              <div className="flex items-center gap-2">
+                <Cpu className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Chế độ thụ động (Passive): AI chỉ phản biện khi bạn chủ động yêu cầu.</span>
+              </div>
+              {isTimerRunning && (
+                <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 text-[10px] shrink-0">
+                  🌱 Flow Mode Active
+                </span>
+              )}
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed">
-              Bạn đang làm một mình và cảm thấy bế tắc hoặc nghi ngờ về tính cấp thiết của công việc hiện tại? Hãy để Virtual Co-founder chất vấn logic của bạn:
+              Bạn đang làm một mình và cảm thấy bế tắc hoặc nghi ngờ về tính cấp thiết của công việc hiện tại? Hãy chọn một câu hỏi dưới đây hoặc nhập câu hỏi cụ thể để AI chất vấn:
             </p>
 
             {/* Question Quick Chips */}
@@ -1052,10 +1069,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                     setChallengeDilemma(q);
                     handleRunChallenge(q);
                   }}
-                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between group"
                 >
                   <span>1. Tại sao tính năng này bắt buộc cho MVP?</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </button>
 
                 <button
@@ -1064,10 +1081,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                     setChallengeDilemma(q);
                     handleRunChallenge(q);
                   }}
-                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between group"
                 >
                   <span>2. Tôi có đang tối ưu quá sớm thay vì ship sản phẩm?</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </button>
 
                 <button
@@ -1076,10 +1093,10 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                     setChallengeDilemma(q);
                     handleRunChallenge(q);
                   }}
-                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between"
+                  className="p-2.5 text-left rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs text-slate-200 transition-colors flex items-center justify-between group"
                 >
                   <span>3. Có cách nào làm bản thô trong 30 phút không?</span>
-                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <ArrowUpRight className="w-3.5 h-3.5 text-amber-400 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
                 </button>
               </div>
             </div>
@@ -1090,16 +1107,25 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 type="text"
                 value={challengeDilemma}
                 onChange={(e) => setChallengeDilemma(e.target.value)}
-                placeholder="Nhập câu hỏi khúc mắc của bạn..."
+                placeholder="Nhập câu hỏi khúc mắc của bạn (VD: Có nên tách microservices không?)..."
                 className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600 focus:outline-none focus:border-amber-500"
               />
               <button
                 onClick={() => handleRunChallenge()}
-                disabled={isChallenging}
-                className="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
+                disabled={isChallenging || !challengeDilemma.trim()}
+                className="px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-bold text-xs flex items-center gap-1.5 transition-colors"
               >
-                {isChallenging ? <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-                <span>Phản biện</span>
+                {isChallenging ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang suy luận...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Phản biện</span>
+                  </>
+                )}
               </button>
             </div>
 
