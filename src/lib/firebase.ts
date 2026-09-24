@@ -1,8 +1,9 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, Auth } from 'firebase/auth';
-import firebaseAppletConfig from '../../firebase-applet-config.json';
+const firebaseAppletConfigModules = import.meta.glob('../../firebase-applet-config.json', { eager: true });
 
-const rawConfig = (firebaseAppletConfig || {}) as Record<string, string | undefined>;
+const rawConfig =
+  ((firebaseAppletConfigModules['../../firebase-applet-config.json'] as { default?: Record<string, string | undefined> } | undefined)?.default || {}) as Record<string, string | undefined>;
 
 const clientConfig = {
   apiKey:
