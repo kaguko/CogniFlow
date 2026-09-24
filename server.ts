@@ -31,6 +31,7 @@ import {
 } from './src/lib/geminiResilience.ts';
 import { rateLimiter, smartCache, classifyTaskComplexity, MODEL_TIERS } from './src/utils/smartCacheRateLimitEngine.ts';
 import { mountMcpRoutes } from './src/mcp/mcpServer.ts';
+import { openapiSpec } from './src/openapi/openapiSpec.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +43,45 @@ app.use(express.json({ limit: '10mb' }));
 
 // Mount Model Context Protocol (MCP) Server endpoints (/api/mcp, /api/mcp/sse)
 mountMcpRoutes(app);
+
+// OpenAPI Specification & Interactive Swagger UI
+app.get('/openapi.json', (_req: Request, res: Response) => {
+  res.json(openapiSpec);
+});
+
+app.get('/api/docs', (_req: Request, res: Response) => {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SymFlowAge M2M API Documentation - Swagger UI</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
+  <style>
+    body { margin: 0; padding: 0; background-color: #0f172a; color: #f8fafc; font-family: system-ui, sans-serif; }
+    #swagger-ui { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .swagger-ui .topbar { display: none; }
+  </style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.onload = () => {
+      window.ui = SwaggerUIBundle({
+        url: '/openapi.json',
+        dom_id: '#swagger-ui',
+        deepLinking: true,
+        presets: [
+          SwaggerUIBundle.presets.apis
+        ],
+      });
+    };
+  </script>
+</body>
+</html>`;
+  res.setHeader('Content-Type', 'text/html');
+  res.send(html);
+});
 
 // Helper to extract client identifier (IP / Auth Token)
 function getClientIdentifier(req: Request): string {
