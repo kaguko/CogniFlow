@@ -416,6 +416,7 @@ export default function App() {
               behavioralInsights={prediction.behavioralInsights}
               currentContext={currentContext}
               microSteps={prediction.microSteps}
+              driftScore={currentDriftScore}
             />
           )}
         </main>
