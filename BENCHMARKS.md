@@ -15,6 +15,25 @@
 | **Decomposition Latency (End-to-End)** | **185ms** (P50) / **290ms** (P95) | Gemini Flash 2.0 API Tier 1 | Giảm từ 1,850ms (Gemini Pro) xuống 185ms |
 | **Drift Score Inference Overhead** | **< 1.2ms** per request | Internal AST / Rule Memory Engine | Khôn làm tăng độ trễ route chính |
 
+### Bundle Baseline (Production Build, 24/09/2026)
+
+| Asset | Raw size | Gzip size | Status |
+| :--- | ---: | ---: | :--- |
+| `dist/assets/index-*.js` | **1,027,508 bytes** | **291.53 KiB** | ⚠️ Trên ngưỡng Vite 500 kB |
+| `dist/assets/index-*.css` | **86,659 bytes** | **12.46 KiB** | Theo dõi |
+
+Đo bằng `npm run build` và `wc -c dist/assets/*` trên Ubuntu 24.04.5 LTS, Node.js của dev container. Đây là baseline hiện tại; các tab ít dùng và thư viện biểu đồ nên được tách bằng dynamic import trước khi coi kích thước bundle là đã đạt yêu cầu cognitive-load.
+
+### Predictive Horizon Backtest (CI Fixture, 24/09/2026)
+
+| Chỉ số | Kết quả hiện tại | Ngưỡng có buffer | Mẫu |
+| :--- | ---: | ---: | ---: |
+| Drift path hit rate | **75%** | `>= 70%` | 20 actual Drift |
+| Crash path hit rate | **70%** | `>= 60%` | 20 actual Crash |
+| False alarm rate | **12.5%** | `<= 15%` | 16 Crash predictions |
+
+Bộ test gồm **60 case**: 20 Drift, 20 Crash, 20 Optimal, với outcome tại T+2h/T+24h; outcome ngoài T+24h và timestamp malformed bị loại khỏi phép đo. Đây là fixture deterministic để bảo vệ regression trong CI, chưa phải accuracy production. Prediction history/outcomes chưa được persist nên chưa thể tuyên bố daily production backtest.
+
 ---
 
 ## 🔍 1. Chi Tiết Benchmark 1: Token Cost Optimization (Gemini Flash-Lite vs Gemini Pro)

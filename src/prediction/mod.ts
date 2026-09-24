@@ -2,6 +2,7 @@
 export * from './valueObjects';
 export * from './components';
 export * from './hooks/usePrediction';
+export * from './backtesting';
 
 export interface PredictionPayload {
   timelines: import('./valueObjects').FutureTimeline[];
