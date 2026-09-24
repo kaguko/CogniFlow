@@ -319,19 +319,41 @@ Phân rã mục tiêu của Agent thành các vi bước 5-15 phút.
 
 Response có contract ổn định gồm `contractVersion`, `requestId`, `agentId`, `goalTitle`, `microSteps` và `leanAdvice`.
 
-### `POST /api/v1/agent/guardrail/drift-check`
+### `POST /api/outcomes` & `POST /api/v1/agent/outcomes` (Feedback Loop)
 
-Kiểm tra output của Agent có lệch khỏi mục tiêu hay rơi vào Rabbit Hole không.
+Gửi báo cáo kết quả thực thi thực tế (`optimal`, `drift`, hoặc `bottleneck`/`crash`) để hệ thống tính toán **Accuracy Score** và lưu vết backtesting:
 
 ```json
 {
-  "originalGoal": "Xây dựng JWT Auth với Redis Token Blacklist",
-  "agentOutput": "Tạo bảng User trong MongoDB và cấu hình Firebase OAuth",
-  "circuitBreakerThreshold": 40
+  "predictionId": "pred-uuid-1234",
+  "actualPath": "optimal",
+  "actualDriftScore": 12,
+  "notes": "Task completed cleanly in 10 minutes without architectural drift."
 }
 ```
 
-Response trả `driftScore`, `threshold`, `status`/`decision` (`ALLOW`, `WARN` hoặc `BLOCK`), `detectedRabbitHoles` và `reason`. Đây là điểm kiểm soát để Agent dừng hoặc yêu cầu human review trước khi tiếp tục.
+Response trả về kết quả lưu trữ cùng các chỉ số đo lường độ chính xác AI thời gian thực (`overallAccuracyScore`, `driftHitRate`, `crashHitRate`).
+
+### `GET /api/accuracy-score` & `GET /api/v1/agent/accuracy-score` (Continuous Backtesting)
+
+Lấy tỷ lệ dự đoán đúng (**Accuracy Score**) và ma trận đo lường hiệu năng của AI trong 30 ngày gần nhất.
+
+Response mẫu:
+```json
+{
+  "accuracyScore": 0.88,
+  "accuracyPercent": 88,
+  "sampleSize": 25,
+  "metrics": {
+    "driftHitRate": 0.85,
+    "crashHitRate": 0.80,
+    "optimalHitRate": 0.92,
+    "falseAlarmRate": 0.08
+  },
+  "verdict": { "pass": true, "failures": [] },
+  "evaluationWindowDays": 30
+}
+```
 
 Ví dụ:
 

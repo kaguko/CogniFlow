@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import {
@@ -14,6 +15,8 @@ import {
   buildSmartFallbackPrediction,
 } from '../lib/geminiResilience.ts';
 import { decomposeOffline } from '../services/offlineDecomposer.ts';
+import { insertPredictionOutcome, insertPredictionSnapshot } from '../db/predictions.ts';
+import { runBacktest } from '../lib/backtest.ts';
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -176,6 +179,48 @@ export function createSymFlowAgeMcpServer() {
               },
             },
             required: ['originalGoal', 'agentOutput'],
+          },
+        },
+        {
+          name: 'symflowage_record_outcome',
+          description:
+            'Records the actual execution outcome (optimal, drift, or bottleneck) for a task to calculate AI Accuracy Score and continuous backtesting metrics.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              predictionId: {
+                type: 'string',
+                description: 'Optional prediction ID if available.',
+              },
+              actualPath: {
+                type: 'string',
+                enum: ['optimal', 'drift', 'bottleneck', 'crash'],
+                description: 'The actual path experienced during execution.',
+              },
+              actualDriftScore: {
+                type: 'number',
+                description: 'Optional recorded drift score (0-100).',
+              },
+              notes: {
+                type: 'string',
+                description: 'Optional execution notes or agent feedback summary.',
+              },
+            },
+            required: ['actualPath'],
+          },
+        },
+        {
+          name: 'symflowage_get_accuracy_score',
+          description:
+            'Retrieves the current AI system Accuracy Score, backtest hit rates, and continuous evaluation metrics.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              evaluationWindowDays: {
+                type: 'number',
+                description: 'Number of past days to evaluate (default: 30).',
+              },
+            },
           },
         },
       ],
@@ -532,6 +577,90 @@ Bắt buộc trả về đúng JSON:
 
         return {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      if (name === 'symflowage_record_outcome') {
+        let actualPath = String(args.actualPath || 'optimal');
+        if (actualPath === 'crash') actualPath = 'bottleneck';
+        if (!['optimal', 'drift', 'bottleneck'].includes(actualPath)) {
+          throw new Error('actualPath must be "optimal", "drift", or "bottleneck" (or "crash")');
+        }
+
+        let predictionId = String(args.predictionId || '').trim();
+        if (!predictionId) {
+          predictionId = randomUUID();
+          await insertPredictionSnapshot({
+            id: predictionId,
+            context: { source: 'mcp_outcome' },
+            payload: { timelines: [{ pathType: actualPath, probability: 100 }] },
+            driftProb: actualPath === 'drift' ? 100 : 0,
+            crashProb: actualPath === 'bottleneck' ? 100 : 0,
+            flowProb: actualPath === 'optimal' ? 100 : 0,
+            predictedPath: actualPath as any,
+            modelVersion: 'mcp-feedback',
+          });
+        }
+
+        const outcomeId = randomUUID();
+        await insertPredictionOutcome({
+          id: outcomeId,
+          predictionId,
+          actualPath: actualPath as any,
+          actualDriftScore: typeof args.actualDriftScore === 'number' ? args.actualDriftScore : null,
+          source: 'auto',
+          notes: typeof args.notes === 'string' ? args.notes : 'Recorded via MCP',
+        });
+
+        const backtest = await runBacktest({
+          from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+          to: new Date(),
+          minAgeHours: 0,
+        });
+
+        const response = {
+          success: true,
+          outcomeId,
+          predictionId,
+          actualPath,
+          updatedAccuracyMetrics: {
+            overallAccuracyScore: backtest.overallAccuracyScore,
+            overallAccuracyPercent: backtest.overallAccuracyPercent,
+            sampleSize: backtest.sampleSize,
+            driftHitRate: Math.round(backtest.driftHitRate * 100) / 100,
+            crashHitRate: Math.round(backtest.crashHitRate * 100) / 100,
+          },
+        };
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
+        };
+      }
+
+      if (name === 'symflowage_get_accuracy_score') {
+        const days = Number.isFinite(Number(args.evaluationWindowDays))
+          ? Math.min(90, Math.max(1, Number(args.evaluationWindowDays)))
+          : 30;
+
+        const to = new Date();
+        const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+        const report = await runBacktest({ from, to, minAgeHours: 0 });
+
+        const response = {
+          accuracyScore: report.overallAccuracyScore,
+          accuracyPercent: report.overallAccuracyPercent,
+          sampleSize: report.sampleSize,
+          evaluationWindowDays: days,
+          metrics: {
+            driftHitRate: Math.round(report.driftHitRate * 100) / 100,
+            crashHitRate: Math.round(report.crashHitRate * 100) / 100,
+            optimalHitRate: Math.round(report.optimalHitRate * 100) / 100,
+            falseAlarmRate: Math.round(report.falseAlarmRate * 100) / 100,
+          },
+        };
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(response, null, 2) }],
         };
       }
 

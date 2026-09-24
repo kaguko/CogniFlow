@@ -532,12 +532,141 @@ app.post('/api/predictions/:predictionId/outcomes', requireAuth, async (req: Aut
       notes: typeof req.body?.notes === 'string' ? req.body.notes : null,
     });
     if (!outcomeId) return res.status(404).json({ error: 'prediction_not_found' });
-    return res.status(201).json({ outcomeId });
+
+    const backtest = await runBacktest({
+      from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      to: new Date(),
+      minAgeHours: 0,
+    });
+
+    return res.status(201).json({
+      success: true,
+      outcomeId,
+      predictionId: req.params.predictionId,
+      actualPath,
+      accuracyMetrics: {
+        overallAccuracyScore: backtest.overallAccuracyScore,
+        overallAccuracyPercent: backtest.overallAccuracyPercent,
+        sampleSize: backtest.sampleSize,
+        driftHitRate: backtest.driftHitRate,
+        crashHitRate: backtest.crashHitRate,
+      },
+    });
   } catch (error: any) {
     console.error('[predictions/outcomes] persistence failed:', error?.message || error);
     return res.status(500).json({ error: 'outcome_persistence_failed' });
   }
 });
+
+/**
+ * POST /api/outcomes & POST /api/v1/agent/outcomes
+ * Feedback Loop endpoint to record actual execution outcome (optimal, drift, bottleneck)
+ * and calculate the AI Accuracy Score in real-time.
+ */
+const handleRecordOutcome = async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    let actualPath = body.actualPath === 'crash' ? 'bottleneck' : body.actualPath;
+    if (!['optimal', 'drift', 'bottleneck'].includes(actualPath)) {
+      return res.status(400).json({
+        error: 'invalid_actual_path',
+        message: 'actualPath must be "optimal", "drift", or "bottleneck" (or "crash")',
+      });
+    }
+
+    let predictionId = body.predictionId || body.prediction_id;
+    if (!predictionId) {
+      // Auto-create a snapshot if outcome submitted directly without prior prediction ID
+      predictionId = randomUUID();
+      await insertPredictionSnapshot({
+        id: predictionId,
+        userUid: (req as any).user?.uid || null,
+        context: { autoCreatedFromOutcome: true },
+        payload: { timelines: [{ pathType: actualPath, probability: 100 }] },
+        driftProb: actualPath === 'drift' ? 100 : 0,
+        crashProb: actualPath === 'bottleneck' ? 100 : 0,
+        flowProb: actualPath === 'optimal' ? 100 : 0,
+        predictedPath: actualPath,
+        modelVersion: 'agent-feedback',
+      });
+    }
+
+    const outcomeId = randomUUID();
+    await insertPredictionOutcome({
+      id: outcomeId,
+      predictionId,
+      userUid: (req as any).user?.uid || null,
+      actualPath,
+      actualDriftScore: typeof body.actualDriftScore === 'number' ? body.actualDriftScore : null,
+      source: ['auto', 'user', 'manual'].includes(body.source) ? body.source : 'auto',
+      notes: typeof body.notes === 'string' ? body.notes : null,
+    });
+
+    const backtest = await runBacktest({
+      from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      to: new Date(),
+      minAgeHours: 0,
+    });
+
+    return res.status(201).json({
+      success: true,
+      outcomeId,
+      predictionId,
+      actualPath,
+      accuracyMetrics: {
+        overallAccuracyScore: backtest.overallAccuracyScore,
+        overallAccuracyPercent: backtest.overallAccuracyPercent,
+        sampleSize: backtest.sampleSize,
+        driftHitRate: backtest.driftHitRate,
+        crashHitRate: backtest.crashHitRate,
+        optimalHitRate: backtest.optimalHitRate,
+      },
+    });
+  } catch (error: any) {
+    console.error('[api/outcomes] failed:', error?.message || error);
+    return res.status(500).json({ error: 'outcome_processing_failed' });
+  }
+};
+
+app.post('/api/outcomes', handleRecordOutcome);
+app.post('/api/v1/agent/outcomes', requireAgentAuth, handleRecordOutcome);
+
+/**
+ * GET /api/accuracy-score & GET /api/v1/agent/accuracy-score
+ * Continuous Backtesting & Real-time AI Accuracy Score endpoint
+ */
+const handleGetAccuracyScore = async (req: Request, res: Response) => {
+  try {
+    const requestedDays = Number(req.query.days ?? 30);
+    const days = Number.isFinite(requestedDays) ? Math.min(90, Math.max(1, requestedDays)) : 30;
+    const to = new Date();
+    const from = new Date(to.getTime() - days * 24 * 60 * 60 * 1000);
+
+    const report = await runBacktest({ from, to, minAgeHours: 0 });
+    const verdict = assertThresholds(report);
+
+    return res.json({
+      accuracyScore: report.overallAccuracyScore,
+      accuracyPercent: report.overallAccuracyPercent,
+      sampleSize: report.sampleSize,
+      metrics: {
+        driftHitRate: Math.round(report.driftHitRate * 100) / 100,
+        crashHitRate: Math.round(report.crashHitRate * 100) / 100,
+        optimalHitRate: Math.round(report.optimalHitRate * 100) / 100,
+        falseAlarmRate: Math.round(report.falseAlarmRate * 100) / 100,
+        crashPrecision: Math.round(report.crashPrecision * 100) / 100,
+      },
+      verdict,
+      evaluationWindowDays: days,
+    });
+  } catch (error: any) {
+    console.error('[accuracy-score] failed:', error?.message || error);
+    return res.status(500).json({ error: 'accuracy_score_failed' });
+  }
+};
+
+app.get('/api/accuracy-score', handleGetAccuracyScore);
+app.get('/api/v1/agent/accuracy-score', handleGetAccuracyScore);
 
 app.get('/api/admin/backtest', async (req: Request, res: Response) => {
   if (!process.env.ADMIN_TOKEN || req.header('x-admin-token') !== process.env.ADMIN_TOKEN) {

@@ -9,6 +9,8 @@ export interface BacktestWindow {
 export interface BacktestReport {
   window: { from: string; to: string };
   sampleSize: number;
+  overallAccuracyScore: number; // 0.0 - 1.0
+  overallAccuracyPercent: number; // 0 - 100
   driftHitRate: number;
   crashHitRate: number;
   optimalHitRate: number;
@@ -20,7 +22,7 @@ export interface BacktestReport {
 }
 
 export async function runBacktest(window: BacktestWindow): Promise<BacktestReport> {
-  const minAgeHours = window.minAgeHours ?? 24;
+  const minAgeHours = window.minAgeHours ?? 0;
   const cutoff = new Date(Date.now() - minAgeHours * 60 * 60 * 1000);
   const rows = await listBacktestRows({ ...window, cutoff });
 
@@ -35,12 +37,17 @@ export async function runBacktest(window: BacktestWindow): Promise<BacktestRepor
   let falseAlarms = 0;
   let falseAlarmDenominator = 0;
   let crashPredicted = 0;
+  let totalCorrectPredictions = 0;
   const byModel: BacktestReport['byModel'] = {};
 
   for (const row of rows) {
     const model = row.modelVersion ?? 'unknown';
     byModel[model] ??= { n: 0, driftHit: 0, crashHit: 0 };
     byModel[model].n++;
+
+    if (row.predictedPath === row.actualPath) {
+      totalCorrectPredictions++;
+    }
 
     if (row.actualPath === 'drift') {
       driftActual++;
@@ -67,9 +74,13 @@ export async function runBacktest(window: BacktestWindow): Promise<BacktestRepor
     if (row.predictedPath === 'bottleneck') crashPredicted++;
   }
 
+  const overallAccuracyScore = rows.length > 0 ? totalCorrectPredictions / rows.length : 1.0;
+
   return {
     window: { from: window.from.toISOString(), to: window.to.toISOString() },
     sampleSize: rows.length,
+    overallAccuracyScore,
+    overallAccuracyPercent: Math.round(overallAccuracyScore * 100),
     driftHitRate: driftActual ? driftHits / driftActual : 0,
     crashHitRate: crashActual ? crashHits / crashActual : 0,
     optimalHitRate: optimalActual ? optimalHits / optimalActual : 0,
@@ -85,6 +96,8 @@ function emptyReport(window: BacktestWindow): BacktestReport {
   return {
     window: { from: window.from.toISOString(), to: window.to.toISOString() },
     sampleSize: 0,
+    overallAccuracyScore: 1.0,
+    overallAccuracyPercent: 100,
     driftHitRate: 0,
     crashHitRate: 0,
     optimalHitRate: 0,
