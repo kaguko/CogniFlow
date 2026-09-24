@@ -27,7 +27,8 @@
 9. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
 10. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
 11. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-12. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+12. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](./BENCHMARKS.md)
+13. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -99,8 +100,15 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
   - Bộ nhớ Few-Shot Prompt Memory Buffer ghi nhận và chèn trực tiếp các quy tắc ngoại lệ vào System Instruction của Gemini Flash, đồng thời lọc sạch báo động ở tầng Hậu xử lý (Post-processor), đảm bảo **100% không tái diễn cảnh báo sai**.
   - Dashboard đo lường độ chính xác thời gian thực (**Precision Score %**) và quản lý danh sách quy tắc ngoại lệ đã học.
 
-### 3. ⚡ Phân Rã Task Siêu Tốc Bằng Gemini Flash (Tier 1 Powered)
-- Bẻ nhỏ bất kỳ task phức tạp nào thành các vi bước $\le 15$ phút ngay trên trạm làm việc.
+### 3. ⚡ Phân Rã "Nano-Steps 2 Phút" Giảm Tải Nhận Thức Triệt Để (Zero Cognitive Load UX)
+- **Cơ chế Gỡ Rối Nhận Thức (Cognitive De-escalation)**: Khi lập trình viên bị tắc (Analysis Paralysis), não bộ đang quá tải năng lượng ý chí. Nút **"⚡ Gỡ rối"** áp dụng mô hình phân rã 3 giai đoạn không tạo thêm gánh nặng suy nghĩ:
+  - 📍 **Giai đoạn 1 (Định vị vật lý - 2 phút)**: Hành động thuần thao tác mở file, chuyển tab hoặc đặt con trỏ chuột (*VD: "Mở file `src/auth/jwt.ts` và cuộn đến hàm `verifySession()`"*). Không đòi hỏi suy nghĩ logic.
+  - ✍️ **Giai đoạn 2 (Bản thô không rủi ro - 2 phút)**: Gõ 1-2 dòng tối thiểu không sợ sai, không sợ hỏng (*VD: "Thêm 1 lệnh `console.log('DEBUG:', token)` hoặc khai báo interface mock"*).
+  - ⚡ **Giai đoạn 3 (Kiểm chứng tức thì - 2 phút)**: Kích hoạt 1 lệnh hoặc F5 để nhìn thấy kết quả ngay (*VD: "Chạy `npm test auth` hoặc F5 trình duyệt để thấy dòng log xuất hiện"*), giải phóng Dopamine tức thời.
+- **Trải nghiệm thao tác 1 chạm (1-Click Nano Sprint)**:
+  - Tích hợp nút **"Bấm Giờ 2p"** ngay tại từng nano-step, tự động nạp đồng hồ 2:00 và đếm ngược tập trung.
+  - Tự động đánh dấu hoàn thành Vi bước khi cả 3 nano-steps đều được tích chọn.
+  - Câu châm ngôn gỡ rối tâm lý (Unblock Mantra) ấm áp giúp giải tỏa sức ì.
 - Định tuyến trực tiếp tới **Gemini Flash-Lite** với độ trễ cực thấp (~140ms - 300ms), tiết kiệm **88% chi phí token**.
 
 ### 4. 🎯 "Challenge Me" – Cố Vấn Phản Biện Socratic (Gemini Pro Tier 3 · 100% Passive)

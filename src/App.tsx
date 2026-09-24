@@ -189,17 +189,36 @@ export default function App() {
       console.warn('Decompose fallback', err);
     }
 
-    // Fallback nano-steps
+    // Fallback nano-steps (3-Stage Zero Cognitive Load Model)
     setPrediction((prev) => ({
       ...prev,
       microSteps: prev.microSteps.map((s) => {
         if (s.id === stepId) {
+          const shortTitle = s.title.replace(/^(BƯỚC \d+:|Step \d+:)/i, '').trim();
           return {
             ...s,
             nanoSteps: [
-              { id: `ns_${Date.now()}_1`, text: 'Mở đúng 1 file liên quan và định vị hàm mục tiêu (2 phút)', done: false },
-              { id: `ns_${Date.now()}_2`, text: 'Viết 1 dòng assert hoặc log để xác nhận input đầu vào (2 phút)', done: false },
-              { id: `ns_${Date.now()}_3`, text: 'Chạy kiểm thử nhanh để xác thực bước giải phóng (3 phút)', done: false },
+              {
+                id: `ns_${Date.now()}_1`,
+                text: `Mở đúng 1 file liên quan và định vị hàm/dòng cần xử lý của "${shortTitle.slice(0, 35)}" (2 phút)`,
+                done: false,
+                minutes: 2,
+                actionCategory: 'navigate',
+              },
+              {
+                id: `ns_${Date.now()}_2`,
+                text: 'Thêm 1 dòng console.log hoặc khai báo biến mock để quan sát dữ liệu đầu vào (2 phút)',
+                done: false,
+                minutes: 2,
+                actionCategory: 'scratchpad',
+              },
+              {
+                id: `ns_${Date.now()}_3`,
+                text: 'Kích hoạt thử nghiệm 1 chạm (chạy npm test hoặc reload) để nhận phản hồi ngay lập tức (2 phút)',
+                done: false,
+                minutes: 2,
+                actionCategory: 'verify',
+              },
             ],
           };
         }

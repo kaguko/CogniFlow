@@ -716,12 +716,17 @@ Trả về định dạng JSON thuần:
 
 /**
  * POST /api/decompose
- * Takes a specific micro-step where user is blocked or overwhelmed,
- * and decomposes it into 3 sub-atomic 2-3 minute nano-steps.
+ * Takes a specific micro-step where user is blocked or overwhelmed (Analysis Paralysis),
+ * and decomposes it into EXACTLY 3 ultra-low cognitive load nano-steps (each <= 2 mins).
+ * 
+ * Strict 3-Stage Low Cognitive Framework:
+ * 1. Physical Locator (Zero-decision navigation): Open specific file/location.
+ * 2. Risk-Free Scratchpad (Zero-pressure typing): Add 1 log, 1 mock variable, or 1 assert.
+ * 3. 1-Click Verification (Immediate feedback loop): Run 1 command or refresh to see result.
  */
-app.post('/api/decompose', async (req: Request, res: Response) => {
+app.post('/api/decompose', createRateLimitMiddleware('ai_simple', 1), async (req: Request, res: Response) => {
   try {
-    const { stepTitle, contextFriction } = req.body;
+    const { stepTitle, contextFriction, currentAction } = req.body;
     if (!stepTitle) {
       return res.status(400).json({ error: 'stepTitle is required' });
     }
@@ -731,29 +736,74 @@ app.post('/api/decompose', async (req: Request, res: Response) => {
       return res.json(buildSmartFallbackDecomposition(stepTitle, contextFriction));
     }
 
-    const prompt = `
-Người dùng đang bị nghẽn (Analysis Paralysis) tại bước: "${stepTitle}".
-Ngữ cảnh rào cản: "${contextFriction || 'Cảm thấy phức tạp, chưa biết bắt đầu thế nào'}".
+    const systemInstruction = `
+Bạn là Động Cơ Gỡ Rối Nhận Thức (Cognitive De-escalation & Nano-Step Engine) dành riêng cho Solo Developer / Indie Hacker khi bị tê liệt phân tích (Analysis Paralysis).
 
-Nhiệm vụ: Áp dụng tư duy lập trình viên (Breakdown & Isolation), phân rã bước này thành ĐÚNG 3 nano-steps cực nhỏ (mỗi nano-step chỉ mất 2-3 phút, dễ đến mức không thể trì hoãn).
+NGUYÊN TẮC VÀNG VỀ TRẢI NGHIỆM NGƯỜI DÙNG (ZERO COGNITIVE LOAD UX):
+Khi người dùng bị tắc, não bộ họ đang bị quá tải nhận thức. Bạn TUYỆT ĐỐI KHÔNG được giao thêm bài toán cần suy nghĩ logic phức tạp.
+Thay vào đó, bạn PHẢI phân rã thành ĐÚNG 3 Nano-Steps siêu nhỏ (2 phút mỗi bước) tuân theo công thức 3 giai đoạn:
 
-Trả về JSON:
+1. Bước 1 (Giai đoạn Định Vị Vật Lý - Physical / Locate):
+   - Không cần suy nghĩ logic. Chỉ là hành động mở file, chuyển tab hoặc định vị con trỏ chuột.
+   - Ví dụ tốt: "Mở file src/auth/jwt.ts và cuộn đến hàm verifySession() (2 phút)".
+   - Ví dụ xấu: "Thiết kế cấu trúc token".
+
+2. Bước 2 (Giai đoạn Bản Thô Không Rủi Ro - Scratchpad / Skeleton):
+   - Hành động gõ tối thiểu (chỉ 1-2 dòng), không sợ sai, không sợ hỏng.
+   - Ví dụ tốt: "Gõ 1 dòng console.log('DEBUG:', token) hoặc khai báo const mockPayload = { id: 1 } (2 phút)".
+   - Ví dụ xấu: "Hiện thực hóa logic mã hóa RSA".
+
+3. Bước 3 (Giai đoạn Kiểm Chứng Phản Hồi Tức Thì - 1-Click Verify):
+   - Thao tác bấm 1 phím hoặc chạy 1 lệnh để nhận phản hồi ngay lập tức, giải phóng dopamine.
+   - Ví dụ tốt: "Chạy lệnh npm test auth hoặc F5 trình duyệt để thấy dòng log xuất hiện (2 phút)".
+   - Ví dụ xấu: "Viết trọn bộ unit test bao phủ mọi edge case".
+
+Trả về JSON thuần:
 {
   "nanoSteps": [
-    { "id": "ns_1", "text": "Hành động 2 phút đầu tiên (VD: Mở file X, tìm hàm Y)", "done": false },
-    { "id": "ns_2", "text": "Hành động 2 phút tiếp theo (VD: Thêm 1 dòng console.log hoặc assert đơn giản)", "done": false },
-    { "id": "ns_3", "text": "Hành động 3 phút chốt hạ để kiểm chứng", "done": false }
+    {
+      "id": "ns_1",
+      "text": "Mô tả hành động bước 1 định vị cụ thể (2 phút)",
+      "done": false,
+      "minutes": 2,
+      "actionCategory": "navigate",
+      "targetFileOrLocation": "Tên file hoặc CLI command nếu có"
+    },
+    {
+      "id": "ns_2",
+      "text": "Mô tả hành động bước 2 gõ bản thô tối thiểu (2 phút)",
+      "done": false,
+      "minutes": 2,
+      "actionCategory": "scratchpad"
+    },
+    {
+      "id": "ns_3",
+      "text": "Mô tả hành động bước 3 kích hoạt phản hồi tức thì (2 phút)",
+      "done": false,
+      "minutes": 2,
+      "actionCategory": "verify"
+    }
   ],
-  "unblockMantra": "1 câu châm ngôn gỡ rối tâm lý ngắn gọn"
+  "unblockMantra": "1 câu châm ngôn gỡ rối tâm lý ngắn gọn, ấm áp, thúc đẩy hành động (VD: 'Chỉ cần mở đúng file và gõ 1 dòng, bạn đã vượt qua 80% sức ì!')."
 }
+`;
+
+    const prompt = `
+Vi bước đang bị kẹt: "${stepTitle}"
+Hành động dự kiến: "${currentAction || stepTitle}"
+Ngữ cảnh rào cản: "${contextFriction || 'Cảm thấy phức tạp, ngại bắt đầu'}"
+
+Hãy bẻ khóa sức ì bằng 3 nano-steps 2 phút siêu dễ dàng:
 `;
 
     try {
       const response = await generateContentWithFallback(ai, {
         contents: prompt,
+        taskComplexity: 'simple',
         config: {
+          systemInstruction,
           responseMimeType: 'application/json',
-          temperature: 0.2,
+          temperature: 0.1,
         },
       });
 
@@ -762,7 +812,7 @@ Trả về JSON:
       return res.json(parsed);
     } catch (aiErr: any) {
       console.warn(
-        '[api/decompose] Upstream Gemini 503 spike, serving resilient decomposition:',
+        '[api/decompose] Upstream Gemini error, serving resilient zero-cognitive-load fallback:',
         aiErr?.message || aiErr
       );
       return res.json(buildSmartFallbackDecomposition(stepTitle, contextFriction));

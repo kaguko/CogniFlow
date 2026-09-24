@@ -5,6 +5,9 @@ export interface NanoStep {
   id: string;
   text: string;
   done: boolean;
+  minutes?: number;
+  actionCategory?: 'navigate' | 'scratchpad' | 'verify';
+  targetFileOrLocation?: string;
 }
 
 export interface MicroStep {

@@ -133,6 +133,9 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     ];
   });
 
+  // State for decomposing micro-step into 3 ultra-low cognitive load nano-steps
+  const [decomposingStepId, setDecomposingStepId] = useState<string | null>(null);
+
   const [calibrationStats, setCalibrationStats] = useState<DriftCalibrationStats>({
     totalEvaluations: 26,
     falsePositivesCount: 1,
@@ -521,6 +524,38 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     } finally {
       setIsChallenging(false);
     }
+  };
+
+  // Trigger AI decomposition of a micro-step into 3 ultra-low cognitive load nano-steps
+  const handleTriggerDecompose = async (step: MicroStep) => {
+    try {
+      setDecomposingStepId(step.id);
+      await onDecomposeStep(
+        step.id,
+        'Cảm thấy phức tạp, quá tải nhận thức hoặc ngại bắt đầu. Cần 3 hành động 2 phút cực kỳ đơn giản.'
+      );
+      // Automatically switch spotlight and timer to 2-minute Nano Sprint
+      setActiveStepId(step.id);
+      setSprintMode('nano');
+      setTotalSprintSeconds(120);
+      setTimeLeft(120);
+      setIsTimerRunning(false);
+      setToastMessage('⚡ Đã bẻ nhỏ thành 3 Nano-Steps 2 phút! Bước 1: Mở đúng file và định vị dòng code.');
+    } catch (err) {
+      console.error('Error decomposing step:', err);
+      setToastMessage('Đã tạo 3 vi bước 2 phút để giúp bạn vượt qua sức ì!');
+    } finally {
+      setDecomposingStepId(null);
+    }
+  };
+
+  // Quick start a 2-minute timer for a specific nano step
+  const handleStartNanoSprint = (stepId: string) => {
+    setActiveStepId(stepId);
+    setSprintMode('nano');
+    setTotalSprintSeconds(120);
+    setTimeLeft(120);
+    setIsTimerRunning(true);
   };
 
   // Attach all steps to Active Goal
@@ -1002,6 +1037,143 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             </div>
           </div>
 
+          {/* ========================================================================= */}
+          {/* ZERO COGNITIVE LOAD: 3 NANO-STEPS 2 PHÚT PANEL */}
+          {/* ========================================================================= */}
+          {activeStep.nanoSteps && activeStep.nanoSteps.length > 0 ? (
+            <div className="p-4 rounded-xl bg-gradient-to-br from-amber-950/30 via-slate-950 to-slate-950 border border-amber-500/40 space-y-3 shadow-lg">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-500/20 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-xs font-bold text-amber-200 uppercase tracking-wider">
+                    3 Nano-Steps 2 Phút (Phá Vỡ Sức Ì & Quá Tải Nhận Thức)
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono font-bold text-amber-300 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-700/50">
+                    {activeStep.nanoSteps.filter((n) => n.done).length} / {activeStep.nanoSteps.length} Hoàn Thành
+                  </span>
+                </div>
+              </div>
+
+              {/* Nano-Step Cards with 3 Structured Stages */}
+              <div className="space-y-2">
+                {activeStep.nanoSteps.map((ns, idx) => {
+                  const stageMeta = [
+                    { label: 'Giai đoạn 1: 📍 Định vị vật lý (2p)', badge: 'bg-blue-950/80 text-blue-300 border-blue-800/60', desc: 'Không cần suy nghĩ logic. Chỉ mở file hoặc chuyển con trỏ.' },
+                    { label: 'Giai đoạn 2: ✍️ Bản thô không rủi ro (2p)', badge: 'bg-amber-950/80 text-amber-300 border-amber-800/60', desc: 'Gõ 1 dòng log/mock interface. Không sợ sai hay hỏng.' },
+                    { label: 'Giai đoạn 3: ⚡ Kiểm chứng tức thì (2p)', badge: 'bg-emerald-950/80 text-emerald-300 border-emerald-800/60', desc: 'F5 hoặc chạy 1 lệnh để nhận phản hồi ngay.' },
+                  ][idx] || { label: `Bước ${idx + 1} (2p)`, badge: 'bg-slate-900 text-slate-300 border-slate-700', desc: 'Vi bước hành động siêu nhỏ' };
+
+                  return (
+                    <div
+                      key={ns.id || idx}
+                      className={`p-3 rounded-lg border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        ns.done
+                          ? 'bg-slate-950/80 border-emerald-500/30 opacity-75'
+                          : idx === 0 || activeStep.nanoSteps?.[idx - 1]?.done
+                          ? 'bg-slate-900 border-amber-500/50 shadow-md shadow-amber-950/20'
+                          : 'bg-slate-950 border-slate-800'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3 flex-1 min-w-0">
+                        <button
+                          type="button"
+                          onClick={() => onToggleNanoStep(activeStep.id, ns.id)}
+                          className="mt-0.5 text-slate-400 hover:text-white transition-colors shrink-0"
+                          title={ns.done ? 'Bỏ đánh dấu' : 'Đánh dấu hoàn thành nano-step này'}
+                        >
+                          {ns.done ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-amber-400/80 hover:text-amber-300" />
+                          )}
+                        </button>
+
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded border ${stageMeta.badge}`}>
+                              {stageMeta.label}
+                            </span>
+                            {ns.done && (
+                              <span className="text-[10px] text-emerald-400 font-bold">✓ Đã vượt qua</span>
+                            )}
+                          </div>
+                          <div className={`text-xs ${ns.done ? 'line-through text-slate-400' : 'text-slate-100 font-medium'}`}>
+                            {ns.text}
+                          </div>
+                          <div className="text-[10px] text-slate-400 italic">
+                            💡 {stageMeta.desc}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick 2-Min Sprint Starter */}
+                      {!ns.done && (
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleStartNanoSprint(activeStep.id)}
+                            className="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold flex items-center gap-1.5 shadow-sm transition-all"
+                            title="Bắt đầu đồng hồ 2 phút ngay cho bước này"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Bấm Giờ 2p</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* All Nano-steps completed celebration & action */}
+              {activeStep.nanoSteps.every((n) => n.done) && !activeStep.completed && (
+                <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2 text-xs text-emerald-200">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span><strong>Tuyệt vời!</strong> Bạn đã hoàn thành cả 3 Nano-steps và phá vỡ bế tắc ban đầu.</span>
+                  </div>
+                  <button
+                    onClick={() => onToggleComplete(activeStep.id)}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shrink-0"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Đánh Dấu Hoàn Thành Vi Bước</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-slate-300">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Đang cảm thấy quá tải hoặc ngại bắt đầu?</strong> Hãy để AI bẻ bước này thành 3 nano-actions 2 phút siêu dễ dàng (không tốn sức suy nghĩ).
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleTriggerDecompose(activeStep)}
+                disabled={decomposingStepId === activeStep.id}
+                className="px-3.5 py-2 rounded-lg bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-white text-xs font-bold flex items-center gap-2 shadow-md shadow-amber-600/20 shrink-0 disabled:opacity-50 transition-all"
+              >
+                {decomposingStepId === activeStep.id ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang bẻ nhỏ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Split className="w-3.5 h-3.5" />
+                    <span>⚡ Gỡ Rối (3 Nano-Steps 2 Phút)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
           {/* Pomodoro Timer Engine Controls */}
           <div className="p-4 rounded-xl bg-slate-950 border border-indigo-950/80 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
@@ -1238,6 +1410,81 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       <span className="text-slate-400 font-semibold">Mẹo gỡ rối: </span>
                       <span className="text-slate-300">{step.unblockTip}</span>
                     </div>
+
+                    {/* Nano-Steps in expanded card */}
+                    {step.nanoSteps && step.nanoSteps.length > 0 ? (
+                      <div className="mt-2.5 p-3 rounded-lg bg-slate-950 border border-amber-500/30 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-bold text-amber-300">
+                          <span className="flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-amber-400" />
+                            <span>3 Nano-Steps 2 Phút Đã Phân Rã:</span>
+                          </span>
+                          <span>
+                            {step.nanoSteps.filter((n) => n.done).length}/{step.nanoSteps.length} xong
+                          </span>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          {step.nanoSteps.map((ns, idx) => (
+                            <div
+                              key={ns.id || idx}
+                              className={`p-2 rounded border text-xs flex items-center justify-between gap-2 ${
+                                ns.done
+                                  ? 'bg-slate-900/60 border-slate-800 text-slate-400 line-through'
+                                  : 'bg-slate-900 border-slate-700 text-slate-200'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <button
+                                  type="button"
+                                  onClick={() => onToggleNanoStep(step.id, ns.id)}
+                                  className="text-slate-400 hover:text-white shrink-0"
+                                >
+                                  {ns.done ? (
+                                    <CheckSquare className="w-3.5 h-3.5 text-emerald-400" />
+                                  ) : (
+                                    <Square className="w-3.5 h-3.5 text-amber-400" />
+                                  )}
+                                </button>
+                                <span className="truncate">{ns.text}</span>
+                              </div>
+
+                              {!ns.done && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartNanoSprint(step.id)}
+                                  className="px-2 py-0.5 rounded bg-amber-600/80 hover:bg-amber-600 text-white text-[10px] font-bold shrink-0 flex items-center gap-1"
+                                >
+                                  <Play className="w-2.5 h-2.5 fill-current" />
+                                  <span>2p</span>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="pt-1 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => handleTriggerDecompose(step)}
+                          disabled={decomposingStepId === step.id}
+                          className="px-2.5 py-1 rounded bg-amber-950/60 hover:bg-amber-900/80 text-amber-300 border border-amber-800/60 text-[11px] font-medium flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          {decomposingStepId === step.id ? (
+                            <>
+                              <div className="w-3 h-3 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
+                              <span>Đang bẻ nhỏ...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Split className="w-3 h-3" />
+                              <span>⚡ Bị kẹt? Bẻ thành 3 Nano-Steps 2 phút</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    )}
                     {isRabbitHole && (
                       <div className="mt-2 p-2.5 bg-yellow-950/40 rounded border border-yellow-500/30 text-yellow-300 text-[11px] space-y-1.5">
                         <div className="flex items-center justify-between">

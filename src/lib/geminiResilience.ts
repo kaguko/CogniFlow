@@ -317,28 +317,35 @@ export function buildSmartFallbackDecision(dilemma: string, context?: any) {
 }
 
 /**
- * Smart fallback for micro-step decomposition
+ * Smart fallback for micro-step decomposition (Zero-Cognitive Load UX)
  */
 export function buildSmartFallbackDecomposition(stepTitle: string, friction?: string) {
+  const shortTitle = stepTitle.replace(/^(BƯỚC \d+:|Step \d+:)/i, '').trim();
   return {
     nanoSteps: [
       {
         id: `ns_${Date.now()}_1`,
-        text: `Mở đúng 1 file liên quan trực tiếp đến "${stepTitle.slice(0, 30)}" và tìm vị trí cần can thiệp (2 phút)`,
+        text: `Mở đúng 1 file liên quan và định vị hàm/dòng cần xử lý của "${shortTitle.slice(0, 35)}" (2 phút)`,
         done: false,
+        minutes: 2,
+        actionCategory: 'navigate',
       },
       {
         id: `ns_${Date.now()}_2`,
-        text: 'Viết 1 dòng assert hoặc log để xác nhận dữ liệu đầu vào mong đợi (2 phút)',
+        text: 'Thêm 1 dòng console.log hoặc khai báo biến mock để quan sát dữ liệu đầu vào (2 phút)',
         done: false,
+        minutes: 2,
+        actionCategory: 'scratchpad',
       },
       {
         id: `ns_${Date.now()}_3`,
-        text: 'Thực hiện 1 thay đổi nhỏ nhất có thể kiểm chứng được ngay (3 phút)',
+        text: 'Kích hoạt thử nghiệm 1 chạm (chạy npm test hoặc reload) để nhận phản hồi ngay lập tức (2 phút)',
         done: false,
+        minutes: 2,
+        actionCategory: 'verify',
       },
     ],
-    unblockMantra: 'Bắt đầu từ một bước nhỏ đến mức bạn không thể thất bại.',
+    unblockMantra: 'Đừng cố gắng giải quyết toàn bộ bài toán ngay. Chỉ cần mở file và gõ 1 dòng, bạn đã đánh bại 80% sức ì!',
   };
 }
 
