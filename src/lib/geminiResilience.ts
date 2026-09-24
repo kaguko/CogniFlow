@@ -484,7 +484,11 @@ export function buildSmartFallbackDecompositionSteps(taskTitle: string) {
   };
 }
 
-export function buildSmartFallbackSemanticDrift(coreGoalTitle: string, tasks: Array<{ id: string; title: string }>) {
+export function buildSmartFallbackSemanticDrift(
+  coreGoalTitle: string,
+  tasks: Array<{ id: string; title: string }>,
+  userExemptions: Array<{ taskId?: string; taskTitle: string; reason?: string }> = []
+) {
   const rabbitHoleKeywords = [
     { kw: 'kubernetes', type: 'over_engineering', reason: 'Dựng Kubernetes cho MVP khi chưa có traffic lớn là over-engineering.' },
     { kw: 'k8s', type: 'over_engineering', reason: 'Dựng k8s khi chưa có user dễ gây lãng phí thì giờ cấu hình YAML.' },
@@ -500,8 +504,29 @@ export function buildSmartFallbackSemanticDrift(coreGoalTitle: string, tasks: Ar
   const detectedRabbitHoles: any[] = [];
   let alignedCount = 0;
 
+  const exemptionSet = new Set(
+    userExemptions.map((e) => (e.taskTitle || '').trim().toLowerCase())
+  );
+  const exemptionIdSet = new Set(
+    userExemptions.map((e) => e.taskId).filter(Boolean)
+  );
+
   tasks.forEach((t) => {
-    const lower = t.title.toLowerCase();
+    const lower = (t.title || '').toLowerCase();
+    
+    // Check if task is explicitly exempted by user feedback
+    const isExempted =
+      exemptionIdSet.has(t.id) ||
+      exemptionSet.has(lower.trim()) ||
+      userExemptions.some(
+        (e) => e.taskTitle && lower.includes(e.taskTitle.toLowerCase())
+      );
+
+    if (isExempted) {
+      alignedCount++;
+      return;
+    }
+
     const matched = rabbitHoleKeywords.find((k) => lower.includes(k.kw));
     if (matched) {
       detectedRabbitHoles.push({
@@ -527,7 +552,10 @@ export function buildSmartFallbackSemanticDrift(coreGoalTitle: string, tasks: Ar
     detectedRabbitHoles,
     summaryAnalysis: detectedRabbitHoles.length > 0
       ? `Phát hiện ${detectedRabbitHoles.length} tác vụ có dấu hiệu sa đà vào Rabbit Hole (Over-engineering hoặc Bike-shedding).`
+      : userExemptions.length > 0
+      ? `Tất cả các tác vụ đang bám sát mục tiêu cốt lõi (đã hiệu chỉnh ${userExemptions.length} ngoại lệ từ phản hồi của bạn).`
       : 'Tất cả các tác vụ đang bám sát mục tiêu cốt lõi.',
+    activeExemptionsCount: userExemptions.length,
   };
 }
 

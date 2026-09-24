@@ -144,3 +144,31 @@ export interface PredictionPayload {
   activeGoalId?: string;
   driftStatus?: GoalDriftStatus;
 }
+
+// Semantic Drift & Rabbit Hole Calibration Feedback Types
+export interface DriftFeedbackEntry {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  coreGoalTitle?: string;
+  detectedType: string;
+  isFalsePositive: boolean; // true = user marked as "NOT a rabbit hole" (False Positive)
+  userReason?: string; // e.g. "Yêu cầu bảo mật bắt buộc", "Kiến trúc cốt lõi"
+  timestamp: number;
+}
+
+export interface UserExemptionRule {
+  id: string;
+  taskId?: string;
+  taskTitle: string;
+  reason: string;
+  createdAt: number;
+}
+
+export interface DriftCalibrationStats {
+  totalEvaluations: number;
+  falsePositivesCount: number;
+  confirmedTrapsCount: number;
+  precisionPercent: number; // e.g. 95%
+  activeExemptionsCount: number;
+}

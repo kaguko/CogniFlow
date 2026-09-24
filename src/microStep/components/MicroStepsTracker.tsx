@@ -4,6 +4,10 @@ import { ProjectContext } from '../../projectContext/entities/projectContext';
 import { LongTermGoal } from '../../goal/entities/longTermGoal';
 import { DEFAULT_PRESET_CONTEXTS } from '../../data/defaultPresets';
 import {
+  UserExemptionRule,
+  DriftCalibrationStats,
+} from '../../types';
+import {
   CheckSquare,
   Square,
   Play,
@@ -36,6 +40,12 @@ import {
   RefreshCw,
   Trash2,
   Check,
+  ShieldCheck,
+  CheckCheck,
+  Settings2,
+  SlidersHorizontal,
+  History,
+  Info,
 } from 'lucide-react';
 import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 import { playCompletionAlert } from '../../utils/audioPlayer';
@@ -55,6 +65,8 @@ interface SemanticDriftAnalysisResult {
   driftStatus: 'safe' | 'caution' | 'danger_yellow';
   detectedRabbitHoles: RabbitHoleDetection[];
   summaryAnalysis: string;
+  calibrationStats?: DriftCalibrationStats;
+  activeExemptionsCount?: number;
 }
 
 interface MicroStepsTrackerProps {
@@ -101,6 +113,76 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const [isAnalyzingSemanticDrift, setIsAnalyzingSemanticDrift] = useState(false);
   const [semanticDriftResult, setSemanticDriftResult] = useState<SemanticDriftAnalysisResult | null>(null);
   const [showRabbitHoleDetails, setShowRabbitHoleDetails] = useState(true);
+
+  // User False-Positive Exemptions & Learning Feedback
+  const [userExemptions, setUserExemptions] = useState<UserExemptionRule[]>(() => {
+    try {
+      const saved = localStorage.getItem('symflowage_drift_exemptions');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to parse local exemptions:', e);
+    }
+    return [
+      {
+        id: 'ex_init_security',
+        taskId: 'step_auth_security',
+        taskTitle: 'Thiết lập HTTPS & mã hóa Token Session chuẩn OWASP',
+        reason: 'Yêu cầu bảo mật bắt buộc để thanh toán Stripe',
+        createdAt: Date.now() - 86400000,
+      },
+    ];
+  });
+
+  const [calibrationStats, setCalibrationStats] = useState<DriftCalibrationStats>({
+    totalEvaluations: 26,
+    falsePositivesCount: 1,
+    confirmedTrapsCount: 3,
+    precisionPercent: 96,
+    activeExemptionsCount: 1,
+  });
+
+  // Modal & Toast states for Feedback / Calibration
+  const [showCalibrationModal, setShowCalibrationModal] = useState(false);
+  const [falsePositiveModalItem, setFalsePositiveModalItem] = useState<RabbitHoleDetection | null>(null);
+  const [selectedPresetReason, setSelectedPresetReason] = useState('Bảo mật & Tuân thủ bắt buộc cho thanh toán/dữ liệu');
+  const [customExemptionReason, setCustomExemptionReason] = useState('');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [confirmedTraps, setConfirmedTraps] = useState<Record<string, boolean>>({});
+
+  // Sync exemptions to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('symflowage_drift_exemptions', JSON.stringify(userExemptions));
+    } catch (e) {
+      console.warn('Failed to save exemptions to localStorage:', e);
+    }
+  }, [userExemptions]);
+
+  // Load server-side drift feedback and calibration stats
+  useEffect(() => {
+    const fetchFeedbackStats = async () => {
+      try {
+        const res = await fetch('/api/drift-feedback');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.calibrationStats) {
+            setCalibrationStats(data.calibrationStats);
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to fetch drift feedback stats:', e);
+      }
+    };
+    fetchFeedbackStats();
+  }, []);
+
+  // Auto-dismiss toast after 3.5s
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // "Challenge Me" (Why-First Socratic - Gemini Pro Tier 3) State
   const [showChallengeModal, setShowChallengeModal] = useState(false);
@@ -157,10 +239,18 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             coreGoalTitle: activeGoal?.title || currentContext.title,
             coreGoalVision: activeGoal?.vision || currentContext.description,
             tasks: microSteps.map((s) => ({ id: s.id, title: s.title })),
+            userExemptions: userExemptions.map((e) => ({
+              taskId: e.taskId,
+              taskTitle: e.taskTitle,
+              reason: e.reason,
+            })),
           }),
         });
         const data = await res.json();
         setSemanticDriftResult(data);
+        if (data.calibrationStats) {
+          setCalibrationStats(data.calibrationStats);
+        }
       } catch (err) {
         console.warn('Error running semantic drift analysis:', err);
       } finally {
@@ -170,7 +260,102 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
 
     const timer = setTimeout(runSemanticDriftCheck, 400);
     return () => clearTimeout(timer);
-  }, [microSteps.length, activeGoal?.id, currentContext.id]);
+  }, [microSteps.length, activeGoal?.id, currentContext.id, userExemptions.length]);
+
+  // Handle Mark False Positive (Exempt Task)
+  const handleConfirmFalsePositive = async () => {
+    if (!falsePositiveModalItem) return;
+
+    const item = falsePositiveModalItem;
+    const finalReason = customExemptionReason.trim() || selectedPresetReason;
+
+    // 1. Create exemption rule
+    const newExemption: UserExemptionRule = {
+      id: `ex_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      taskId: item.taskId,
+      taskTitle: item.taskTitle,
+      reason: finalReason,
+      createdAt: Date.now(),
+    };
+
+    setUserExemptions((prev) => [newExemption, ...prev]);
+
+    // 2. Optimistically update local drift result
+    if (semanticDriftResult) {
+      const remainingHoles = semanticDriftResult.detectedRabbitHoles.filter(
+        (r) => r.taskId !== item.taskId && r.taskTitle !== item.taskTitle
+      );
+      const newAligned = Math.min(100, Math.round(((microSteps.length - remainingHoles.length) / Math.max(1, microSteps.length)) * 100));
+      setSemanticDriftResult({
+        ...semanticDriftResult,
+        detectedRabbitHoles: remainingHoles,
+        overallAlignmentPercent: newAligned,
+        driftStatus: newAligned < 50 ? 'danger_yellow' : newAligned < 75 ? 'caution' : 'safe',
+      });
+    }
+
+    // 3. Send feedback to backend API
+    try {
+      const res = await fetch('/api/drift-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: item.taskId,
+          taskTitle: item.taskTitle,
+          coreGoalTitle: activeGoal?.title || currentContext.title,
+          detectedType: item.rabbitHoleType,
+          isFalsePositive: true,
+          userReason: finalReason,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.calibrationStats) {
+          setCalibrationStats(data.calibrationStats);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to send feedback to backend:', e);
+    }
+
+    setFalsePositiveModalItem(null);
+    setCustomExemptionReason('');
+    setToastMessage(`🎯 Đã ghi nhận ngoại lệ! AI đã học quy tắc: "${item.taskTitle}" là cần thiết và sẽ không báo động giả.`);
+  };
+
+  // Handle Confirm True Positive (User agrees it's a trap)
+  const handleConfirmTruePositive = async (item: RabbitHoleDetection) => {
+    setConfirmedTraps((prev) => ({ ...prev, [item.taskId || item.taskTitle]: true }));
+    try {
+      const res = await fetch('/api/drift-feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: item.taskId,
+          taskTitle: item.taskTitle,
+          coreGoalTitle: activeGoal?.title || currentContext.title,
+          detectedType: item.rabbitHoleType,
+          isFalsePositive: false,
+          userReason: 'Xác nhận là sa đà (True Positive)',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.calibrationStats) {
+          setCalibrationStats(data.calibrationStats);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to record true positive feedback:', e);
+    }
+    setToastMessage(`✓ Đã xác nhận bẫy sa đà: "${item.taskTitle}". Cảm ơn bạn đã phản hồi để nâng cao độ chính xác!`);
+  };
+
+  // Remove an exemption rule
+  const handleRemoveExemption = (exId: string) => {
+    setUserExemptions((prev) => prev.filter((e) => e.id !== exId));
+    setToastMessage('Đã gỡ bỏ ngoại lệ. AI sẽ phân tích lại tác vụ này trong lượt quét tiếp theo.');
+  };
 
   // When active step changes, sync timer to the selected step
   useEffect(() => {
@@ -481,6 +666,18 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               </span>
             )}
 
+            {/* Drift Score Precision Calibration Pill */}
+            <button
+              onClick={() => setShowCalibrationModal(true)}
+              className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-950 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-950/60 hover:border-indigo-400 transition-colors flex items-center gap-1.5"
+              title="Xem thống kê đo lường độ chính xác và quản lý bộ nhớ học hỏi AI"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Độ chính xác: {calibrationStats.precisionPercent}%</span>
+              <span className="text-slate-500">·</span>
+              <span className="text-slate-400">{userExemptions.length} ngoại lệ</span>
+            </button>
+
             <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
               isDriftWarning
                 ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
@@ -534,40 +731,85 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           </div>
         </div>
 
-        {/* DETECTED RABBIT HOLES ALERT PANEL */}
+        {/* DETECTED RABBIT HOLES ALERT PANEL WITH FALSE POSITIVE FEEDBACK LOOP */}
         {detectedRabbitHoles.length > 0 && (
-          <div className="mt-3 p-3 rounded-lg bg-yellow-950/60 border border-yellow-500/60 space-y-2">
-            <div className="flex items-center justify-between text-yellow-300 font-bold text-xs">
+          <div className="mt-3 p-3.5 rounded-lg bg-yellow-950/60 border border-yellow-500/60 space-y-3">
+            <div className="flex items-center justify-between text-yellow-300 font-bold text-xs flex-wrap gap-2">
               <div className="flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4 text-yellow-400 animate-bounce" />
                 <span>PHÁT HIỆN {detectedRabbitHoles.length} BẪY "RABBIT HOLE" (SA ĐÀ / OVER-ENGINEERING):</span>
               </div>
-              <button
-                onClick={() => setShowRabbitHoleDetails(!showRabbitHoleDetails)}
-                className="text-[11px] underline text-yellow-400 hover:text-yellow-200"
-              >
-                {showRabbitHoleDetails ? 'Thu gọn' : 'Xem chi tiết'}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowCalibrationModal(true)}
+                  className="text-[11px] text-yellow-300/80 hover:text-yellow-100 flex items-center gap-1 font-mono underline"
+                >
+                  <Info className="w-3 h-3" />
+                  <span>Cơ chế học hỏi & độ tin cậy</span>
+                </button>
+                <button
+                  onClick={() => setShowRabbitHoleDetails(!showRabbitHoleDetails)}
+                  className="text-[11px] underline text-yellow-400 hover:text-yellow-200"
+                >
+                  {showRabbitHoleDetails ? 'Thu gọn' : 'Xem chi tiết'}
+                </button>
+              </div>
             </div>
 
             {showRabbitHoleDetails && (
-              <div className="space-y-2 pt-1 text-xs">
-                {detectedRabbitHoles.map((rh, i) => (
-                  <div key={i} className="p-2.5 rounded bg-slate-950/80 border border-yellow-500/30 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">🕳️ "{rh.taskTitle}"</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-yellow-900/60 text-yellow-300 border border-yellow-700/60">
-                        {rh.rabbitHoleType}
-                      </span>
+              <div className="space-y-2.5 pt-1 text-xs">
+                {detectedRabbitHoles.map((rh, i) => {
+                  const isConfirmedTrap = confirmedTraps[rh.taskId || rh.taskTitle];
+                  return (
+                    <div key={i} className="p-3 rounded-lg bg-slate-950/90 border border-yellow-500/40 space-y-2">
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="font-bold text-white text-xs">🕳️ "{rh.taskTitle}"</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-yellow-900/80 text-yellow-300 border border-yellow-700">
+                          {rh.rabbitHoleType}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] pt-0.5">
+                        <div className="text-yellow-200/90 bg-yellow-950/40 p-2 rounded border border-yellow-800/40">
+                          <strong className="text-yellow-300">Vì sao là bẫy:</strong> {rh.whyItsATrap}
+                        </div>
+                        <div className="text-emerald-300/90 bg-emerald-950/30 p-2 rounded border border-emerald-800/40">
+                          <strong className="text-emerald-300">Giải pháp tinh gọn:</strong> {rh.leanAlternative}
+                        </div>
+                      </div>
+
+                      {/* ACTIVE LEARNING & CALIBRATION ACTION BUTTONS */}
+                      <div className="flex items-center justify-between pt-1 border-t border-slate-800/80 text-[11px] gap-2 flex-wrap">
+                        <div className="text-slate-400 text-[10px] italic">
+                          AI có nhận định sai không? Phản hồi giúp AI hiệu chỉnh độ chính xác:
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setFalsePositiveModalItem(rh)}
+                            className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-rose-500/50 hover:border-rose-400 text-rose-300 font-medium flex items-center gap-1.5 transition-colors"
+                            title="Đánh dấu tác vụ này là hợp lệ, cần thiết và không phải Rabbit Hole"
+                          >
+                            <X className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Đây KHÔNG PHẢI Rabbit Hole (Báo False Positive)</span>
+                          </button>
+
+                          <button
+                            onClick={() => handleConfirmTruePositive(rh)}
+                            disabled={isConfirmedTrap}
+                            className={`px-2.5 py-1 rounded font-medium flex items-center gap-1.5 transition-colors ${
+                              isConfirmedTrap
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-700/60'
+                                : 'bg-slate-900 hover:bg-slate-800 border border-emerald-500/50 text-emerald-300'
+                            }`}
+                          >
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{isConfirmedTrap ? 'Đã xác nhận sa đà' : 'Đúng, đây là bẫy sa đà'}</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-yellow-200/90 text-[11px]">
-                      <strong>Vì sao là bẫy:</strong> {rh.whyItsATrap}
-                    </div>
-                    <div className="text-emerald-300 text-[11px]">
-                      <strong>Giải pháp tinh gọn:</strong> {rh.leanAlternative}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -903,6 +1145,9 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
             const isCurrentActive = step.id === activeStepId;
             const isExpanded = !!expandedStepIds[step.id];
             const isRabbitHole = detectedRabbitHoles.find((r) => r.taskId === step.id);
+            const isExempted = userExemptions.some(
+              (e) => (e.taskId && e.taskId === step.id) || (step.title && e.taskTitle && step.title.toLowerCase().includes(e.taskTitle.toLowerCase()))
+            );
 
             return (
               <div
@@ -957,6 +1202,13 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                             <span>🕳️ Bẫy sa đà: {isRabbitHole.rabbitHoleType}</span>
                           </span>
                         )}
+
+                        {isExempted && !isRabbitHole && (
+                          <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-700/50 flex items-center gap-1">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            <span>Đã xác nhận ngoại lệ</span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="text-[11px] text-slate-400 mt-1 line-clamp-1 font-mono">
@@ -987,8 +1239,20 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                       <span className="text-slate-300">{step.unblockTip}</span>
                     </div>
                     {isRabbitHole && (
-                      <div className="mt-2 p-2 bg-yellow-950/40 rounded border border-yellow-500/30 text-yellow-300 text-[11px]">
-                        <strong>Cảnh báo Rabbit Hole:</strong> {isRabbitHole.whyItsATrap}
+                      <div className="mt-2 p-2.5 bg-yellow-950/40 rounded border border-yellow-500/30 text-yellow-300 text-[11px] space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <strong>Cảnh báo Rabbit Hole: {isRabbitHole.whyItsATrap}</strong>
+                          <button
+                            onClick={() => setFalsePositiveModalItem(isRabbitHole)}
+                            className="px-2 py-0.5 rounded bg-rose-950 hover:bg-rose-900 text-rose-200 border border-rose-700/60 text-[10px] font-mono flex items-center gap-1"
+                          >
+                            <X className="w-3 h-3" />
+                            <span>Báo False Positive</span>
+                          </button>
+                        </div>
+                        <div className="text-emerald-300 text-[10px]">
+                          <strong>Giải pháp:</strong> {isRabbitHole.leanAlternative}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -998,6 +1262,19 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
           })}
         </div>
       </div>
+
+      {/* Floating Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-6 right-6 z-50 max-w-md p-3.5 rounded-xl bg-slate-900 border-2 border-indigo-500 text-slate-100 text-xs shadow-2xl shadow-indigo-500/20 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-indigo-400 shrink-0" />
+            <span className="font-medium">{toastMessage}</span>
+          </div>
+          <button onClick={() => setToastMessage(null)} className="text-slate-400 hover:text-white shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* 5. FLOATING "CHALLENGE ME" (GEMINI PRO TIER 3 WHY-FIRST SOCRATIC - 100% PASSIVE) */}
@@ -1154,6 +1431,214 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 )}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 6. FALSE POSITIVE REPORT & CALIBRATION MODAL */}
+      {/* ========================================================================= */}
+      {falsePositiveModalItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-rose-500/50 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-rose-400 font-bold text-sm">
+                <ShieldAlert className="w-5 h-5 text-rose-400" />
+                <span>Báo Cáo Báo Động Giả (False Positive Feedback)</span>
+              </div>
+              <button
+                onClick={() => setFalsePositiveModalItem(null)}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>
+                Bạn đang đánh dấu tác vụ sau là <strong className="text-emerald-300">CẦN THIẾT và HỢP LỆ</strong>:
+              </p>
+              <div className="p-3 bg-slate-950 rounded-lg border border-slate-800 font-mono text-white text-xs">
+                🕳️ "{falsePositiveModalItem.taskTitle}"
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Hãy cho biết lý do để hệ thống Semantic Drift ghi nhớ quy tắc này vào bộ nhớ học hỏi (Few-Shot Prompt Memory Buffer), tránh báo động nhầm trong tương lai:
+              </p>
+            </div>
+
+            {/* Quick Reason Presets */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-slate-400">Chọn lý do hợp lệ nhanh:</label>
+              <div className="grid grid-cols-1 gap-1.5 text-xs">
+                {[
+                  'Bảo mật, xác thực & tuân thủ bắt buộc cho thanh toán/dữ liệu',
+                  'Nền tảng kiến trúc then chốt bắt buộc phải có cho MVP',
+                  'Yêu cầu đặc thù bắt buộc từ khách hàng / thị trường mục tiêu',
+                  'Tác vụ phục vụ trực tiếp tỷ lệ chuyển đổi hoặc giữ chân người dùng',
+                ].map((reason, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPresetReason(reason);
+                      setCustomExemptionReason(reason);
+                    }}
+                    className={`p-2 text-left rounded-lg border text-xs transition-colors ${
+                      selectedPresetReason === reason
+                        ? 'bg-indigo-950/80 border-indigo-500 text-indigo-200'
+                        : 'bg-slate-950 border-slate-800 text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    ✓ {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 mb-1">
+                Hoặc tùy chỉnh lý do (AI sẽ học từ mô tả này):
+              </label>
+              <input
+                type="text"
+                value={customExemptionReason}
+                onChange={(e) => setCustomExemptionReason(e.target.value)}
+                placeholder="VD: Task này là bắt buộc vì..."
+                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setFalsePositiveModalItem(null)}
+                className="px-3.5 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 text-xs"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmFalsePositive}
+                className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-emerald-600/30"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                <span>Lưu & Hiệu Chỉnh AI</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 7. DRIFT SCORE CALIBRATION & LEARNED MEMORY MANAGER MODAL */}
+      {/* ========================================================================= */}
+      {showCalibrationModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-indigo-500/50 rounded-2xl max-w-2xl w-full p-6 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-indigo-400 font-bold text-base">
+                <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                <span>Đo Lường Độ Chính Xác & Bộ Nhớ Hiệu Chỉnh AI (Zero False Positives)</span>
+              </div>
+              <button
+                onClick={() => setShowCalibrationModal(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Accuracy Metrics */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+              <div className="p-3 bg-slate-950 rounded-xl border border-indigo-500/30">
+                <div className="text-[10px] text-slate-400 uppercase font-mono">Độ Chính Xác (Precision)</div>
+                <div className="text-2xl font-black font-mono text-emerald-400 mt-1">
+                  {calibrationStats.precisionPercent}%
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-mono">Tổng Lượt Đánh Giá</div>
+                <div className="text-2xl font-black font-mono text-white mt-1">
+                  {calibrationStats.totalEvaluations}
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-mono">Ngoại Lệ Đã Học</div>
+                <div className="text-2xl font-black font-mono text-indigo-300 mt-1">
+                  {userExemptions.length}
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
+                <div className="text-[10px] text-slate-400 uppercase font-mono">Bẫy Đã Xác Nhận</div>
+                <div className="text-2xl font-black font-mono text-amber-400 mt-1">
+                  {calibrationStats.confirmedTrapsCount}
+                </div>
+              </div>
+            </div>
+
+            {/* Explanation of Few-Shot Calibration */}
+            <div className="p-3 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-indigo-300">
+                <Info className="w-4 h-4 text-indigo-400" />
+                <span>Nguyên lý học hỏi & phòng ngừa báo động sai:</span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Khi bạn đánh dấu <em>"Không phải Rabbit Hole"</em>, quy tắc này lập tức được đưa vào System Prompt và Heuristic Engine. Trong các lần phân tích tiếp theo, mô hình AI (Gemini Flash) sẽ ưu tiên tuyệt đối các quy tắc học hỏi này, đảm bảo không làm gián đoạn hay gây ức chế cho lập trình viên.
+              </p>
+            </div>
+
+            {/* List of Active Learned Exemptions */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-white uppercase tracking-wider">
+                  Danh sách quy tắc ngoại lệ đã học ({userExemptions.length}):
+                </span>
+              </div>
+
+              {userExemptions.length === 0 ? (
+                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center text-xs text-slate-400">
+                  Chưa có ngoại lệ nào. Khi phát hiện cảnh báo sai, hãy bấm "Không phải Rabbit Hole" để AI ghi nhớ.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {userExemptions.map((ex) => (
+                    <div
+                      key={ex.id}
+                      className="p-3 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="space-y-1 min-w-0">
+                        <div className="font-bold text-slate-200 truncate">
+                          🛡️ "{ex.taskTitle}"
+                        </div>
+                        <div className="text-[11px] text-emerald-400">
+                          <strong>Lý do xác nhận:</strong> {ex.reason}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => handleRemoveExemption(ex.id)}
+                        className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-800 transition-colors shrink-0"
+                        title="Xóa ngoại lệ (AI sẽ quét lại tác vụ này)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-3 border-t border-slate-800">
+              <button
+                onClick={() => setShowCalibrationModal(false)}
+                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}

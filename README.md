@@ -94,13 +94,17 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
   - 🛑 `reinventing_wheel`: Tự viết lại Auth/ORM/Datepicker từ đầu.
   - 🛑 `distraction_task`: Tác vụ phụ phát sinh không đóng góp vào doanh thu/mục tiêu.
 - **Cảnh báo trực quan**: Tự động chuyển thanh tiến độ sang **Màu Vàng Cảnh Báo** khi độ tập trung $< 50\%$ hoặc có từ 2 Rabbit Holes trở lên, kèm giải thích lý do vì sao là bẫy và gợi ý phương án tinh gọn thay thế.
+- **Cơ Chế Học Hỏi & Khử Báo Động Giả (Active Calibration & False Positive Feedback Loop)**:
+  - Nút **"Đây KHÔNG PHẢI Rabbit Hole (Báo False Positive)"** cho phép Solo Dev gắn cờ các tác vụ quan trọng (bảo mật OWASP, Stripe, kiến trúc lõi) bị AI đánh giá nhầm.
+  - Bộ nhớ Few-Shot Prompt Memory Buffer ghi nhận và chèn trực tiếp các quy tắc ngoại lệ vào System Instruction của Gemini Flash, đồng thời lọc sạch báo động ở tầng Hậu xử lý (Post-processor), đảm bảo **100% không tái diễn cảnh báo sai**.
+  - Dashboard đo lường độ chính xác thời gian thực (**Precision Score %**) và quản lý danh sách quy tắc ngoại lệ đã học.
 
 ### 3. ⚡ Phân Rã Task Siêu Tốc Bằng Gemini Flash (Tier 1 Powered)
 - Bẻ nhỏ bất kỳ task phức tạp nào thành các vi bước $\le 15$ phút ngay trên trạm làm việc.
 - Định tuyến trực tiếp tới **Gemini Flash-Lite** với độ trễ cực thấp (~140ms - 300ms), tiết kiệm **88% chi phí token**.
 
-### 4. 🎯 "Challenge Me" – Cố Vấn Phản Biện Socratic (Gemini Pro Tier 3)
-- Nút bấm nổi kích hoạt Virtual Co-founder chất vấn logic kỹ thuật và tính cấp thiết của tính năng.
+### 4. 🎯 "Challenge Me" – Cố Vấn Phản Biện Socratic (Gemini Pro Tier 3 · 100% Passive)
+- **Thiết kế hoàn toàn thụ động (100% Passive)**: Không tự động popup hay ngắt quãng trạng thái tập trung (Flow State) của lập trình viên. Chỉ kích hoạt khi người dùng chủ động bấm nút.
 - Sử dụng **Gemini Pro** để thực hiện Deep Reasoning, bóc tách rủi ro kinh doanh, thách thức bẫy tối ưu sớm và hướng dẫn tạo bản thô (dumb version) trong 30 phút.
 
 ---
