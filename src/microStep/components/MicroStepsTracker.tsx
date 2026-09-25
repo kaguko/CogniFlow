@@ -46,6 +46,9 @@ import {
   SlidersHorizontal,
   History,
   Info,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { AudioPlayerButton } from '../../components/AudioPlayerButton';
 import { playCompletionAlert } from '../../utils/audioPlayer';
@@ -80,6 +83,8 @@ interface MicroStepsTrackerProps {
   onLinkStepToGoal?: (stepId: string, goalId: string, milestoneId?: string) => void;
   onSelectPreset?: (preset: ProjectContext) => void;
   onDeleteStep?: (stepId: string) => void;
+  onReorderSteps?: (reorderedSteps: MicroStep[]) => void;
+  onMoveStep?: (stepId: string, direction: 'up' | 'down') => void;
 }
 
 type SprintMode = 'nano' | 'micro' | 'pomodoro' | 'break';
@@ -95,6 +100,8 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   onLinkStepToGoal,
   onSelectPreset,
   onDeleteStep,
+  onReorderSteps,
+  onMoveStep,
 }) => {
   const [activeStepId, setActiveStepId] = useState<string>(() => {
     const firstPending = microSteps.find((s) => !s.completed);
@@ -151,6 +158,11 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
   const [customExemptionReason, setCustomExemptionReason] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [confirmedTraps, setConfirmedTraps] = useState<Record<string, boolean>>({});
+
+  // Drag and drop & move states
+  const [draggedStepId, setDraggedStepId] = useState<string | null>(null);
+  const [dragOverStepId, setDragOverStepId] = useState<string | null>(null);
+  const [streamProgressCount, setStreamProgressCount] = useState<number>(0);
 
   // Sync exemptions to localStorage
   useEffect(() => {
@@ -459,20 +471,23 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
     setExpandedStepIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Quick Decompose Task using Flash / Tier 1
+  // Quick Decompose Task using Real-time SSE Stream (Tier 1 Flash)
   const handleQuickDecomposeTask = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!quickTaskInput.trim()) return;
 
+    const taskTitleToProcess = quickTaskInput.trim();
     try {
       setIsQuickDecomposing(true);
-      setQuickDecomposeNotice(null);
+      setStreamProgressCount(0);
+      setQuickDecomposeNotice('⚡ Đang kết nối luồng phân rã Gemini Stream...');
 
-      const res = await fetch('/api/decompose-task', {
+      // Try streaming endpoint first via Fetch + ReadableStream
+      const res = await fetch('/api/decompose-task/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          taskTitle: quickTaskInput.trim(),
+          taskTitle: taskTitleToProcess,
           context: {
             goalTitle: activeGoal?.title,
             energyLevel: currentContext.energyLevel,
@@ -480,27 +495,161 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
         }),
       });
 
-      const data = await res.json();
-      if (data.microSteps && data.microSteps.length > 0) {
-        data.microSteps.forEach((step: MicroStep, idx: number) => {
-          onAddStep({
-            ...step,
-            id: `step_ai_${Date.now()}_${idx}`,
-            goalId: activeGoal?.id,
-            goalTitle: activeGoal?.title,
-            milestoneId: activeGoal?.milestones[0]?.id,
-            milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Milestone',
-            isAlignedWithGoal: true,
-          });
-        });
-        setQuickDecomposeNotice(`⚡ Đã phân rã thành công ${data.microSteps.length} vi bước ≤15 phút bằng Gemini Flash!`);
-        setQuickTaskInput('');
+      if (!res.ok || !res.body) {
+        throw new Error('Streaming not available, falling back to standard endpoint');
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let receivedCount = 0;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          const lines = part.split('\n');
+          let eventType = '';
+          let dataText = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) eventType = line.slice(7).trim();
+            if (line.startsWith('data: ')) dataText = line.slice(6).trim();
+          }
+
+          if (eventType === 'step' && dataText) {
+            try {
+              const stepObj = JSON.parse(dataText);
+              receivedCount++;
+              setStreamProgressCount(receivedCount);
+              setQuickDecomposeNotice(`⚡ Đang stream trực tiếp: nhận vi bước #${receivedCount}...`);
+              onAddStep({
+                ...stepObj,
+                id: `step_ai_stream_${Date.now()}_${receivedCount}`,
+                goalId: activeGoal?.id,
+                goalTitle: activeGoal?.title,
+                milestoneId: activeGoal?.milestones[0]?.id,
+                milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Milestone',
+                isAlignedWithGoal: true,
+              });
+            } catch (parseErr) {
+              console.warn('Failed parsing step data:', parseErr);
+            }
+          } else if (eventType === 'complete') {
+            setQuickDecomposeNotice(`⚡ Stream thành công! Đã bẻ nhỏ ${receivedCount} vi bước ≤15p.`);
+            setQuickTaskInput('');
+          }
+        }
       }
     } catch (err: any) {
-      console.error('Error decomposing task:', err);
-      setQuickDecomposeNotice('Đã tạo các vi bước mẫu dựa trên nguyên tắc Fail-Fast.');
+      console.warn('SSE stream error, trying fallback:', err);
+      try {
+        const fallbackRes = await fetch('/api/decompose-task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            taskTitle: taskTitleToProcess,
+            context: {
+              goalTitle: activeGoal?.title,
+              energyLevel: currentContext.energyLevel,
+            },
+          }),
+        });
+        const data = await fallbackRes.json();
+        if (data.microSteps && data.microSteps.length > 0) {
+          data.microSteps.forEach((step: MicroStep, idx: number) => {
+            onAddStep({
+              ...step,
+              id: `step_ai_${Date.now()}_${idx}`,
+              goalId: activeGoal?.id,
+              goalTitle: activeGoal?.title,
+              milestoneId: activeGoal?.milestones[0]?.id,
+              milestoneTitle: activeGoal?.milestones[0]?.title || 'Core Milestone',
+              isAlignedWithGoal: true,
+            });
+          });
+          setQuickDecomposeNotice(`⚡ Đã phân rã thành công ${data.microSteps.length} vi bước ≤15 phút!`);
+          setQuickTaskInput('');
+        }
+      } catch (innerErr) {
+        setQuickDecomposeNotice('Đã tạo các vi bước mẫu dựa trên nguyên tắc Fail-Fast.');
+      }
     } finally {
       setIsQuickDecomposing(false);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, stepId: string) => {
+    e.dataTransfer.setData('text/plain', stepId);
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggedStepId(stepId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, stepId: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOverStepId !== stepId) {
+      setDragOverStepId(stepId);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent, stepId: string) => {
+    if (dragOverStepId === stepId) {
+      setDragOverStepId(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, targetStepId: string) => {
+    e.preventDefault();
+    const sourceStepId = e.dataTransfer.getData('text/plain') || draggedStepId;
+    setDraggedStepId(null);
+    setDragOverStepId(null);
+
+    if (!sourceStepId || sourceStepId === targetStepId) return;
+
+    const sourceIndex = microSteps.findIndex((s) => s.id === sourceStepId);
+    const targetIndex = microSteps.findIndex((s) => s.id === targetStepId);
+
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const newSteps = [...microSteps];
+    const [moved] = newSteps.splice(sourceIndex, 1);
+    newSteps.splice(targetIndex, 0, moved);
+
+    // Re-index order
+    const reordered = newSteps.map((s, idx) => ({ ...s, order: idx + 1 }));
+
+    if (onReorderSteps) {
+      onReorderSteps(reordered);
+    }
+    setToastMessage(`✓ Đã sắp xếp lại thứ tự vi bước: "${moved.title.slice(0, 30)}..."`);
+  };
+
+  const handleManualMove = (stepId: string, direction: 'up' | 'down') => {
+    const currentIndex = microSteps.findIndex((s) => s.id === stepId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= microSteps.length) return;
+
+    if (onMoveStep) {
+      onMoveStep(stepId, direction);
+      return;
+    }
+
+    const newSteps = [...microSteps];
+    const temp = newSteps[currentIndex];
+    newSteps[currentIndex] = newSteps[targetIndex];
+    newSteps[targetIndex] = temp;
+
+    const reordered = newSteps.map((s, idx) => ({ ...s, order: idx + 1 }));
+    if (onReorderSteps) {
+      onReorderSteps(reordered);
     }
   };
 
@@ -1329,11 +1478,23 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
               (e) => (e.taskId && e.taskId === step.id) || (step.title && e.taskTitle && step.title.toLowerCase().includes(e.taskTitle.toLowerCase()))
             );
 
+            const isDraggingThis = draggedStepId === step.id;
+            const isDragOverThis = dragOverStepId === step.id;
+
             return (
               <div
                 key={step.id}
+                draggable
+                onDragStart={(e) => handleDragStart(e, step.id)}
+                onDragOver={(e) => handleDragOver(e, step.id)}
+                onDragLeave={(e) => handleDragLeave(e, step.id)}
+                onDrop={(e) => handleDrop(e, step.id)}
                 className={`p-3.5 rounded-xl border transition-all ${
-                  isCurrentActive
+                  isDraggingThis
+                    ? 'opacity-40 border-indigo-400 border-dashed bg-slate-900/40'
+                    : isDragOverThis
+                    ? 'border-indigo-400 ring-2 ring-indigo-500/50 bg-indigo-950/30'
+                    : isCurrentActive
                     ? 'bg-slate-900 border-indigo-500 shadow-md'
                     : isRabbitHole
                     ? 'bg-yellow-950/20 border-yellow-500/40'
@@ -1343,10 +1504,38 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                    {/* Drag Handle & Up/Down Sort buttons */}
+                    <div className="flex items-center gap-1 mt-0.5 shrink-0 text-slate-500">
+                      <div
+                        className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-slate-800 hover:text-slate-300"
+                        title="Kéo thả để sắp xếp thứ tự vi bước"
+                      >
+                        <GripVertical className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col">
+                        <button
+                          type="button"
+                          onClick={() => handleManualMove(step.id, 'up')}
+                          className="hover:text-indigo-400 p-0.5"
+                          title="Di chuyển lên trên"
+                        >
+                          <ArrowUp className="w-2.5 h-2.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleManualMove(step.id, 'down')}
+                          className="hover:text-indigo-400 p-0.5"
+                          title="Di chuyển xuống dưới"
+                        >
+                          <ArrowDown className="w-2.5 h-2.5" />
+                        </button>
+                      </div>
+                    </div>
+
                     <button
                       onClick={() => onToggleComplete(step.id)}
-                      className="mt-0.5 text-slate-400 hover:text-white transition-colors"
+                      className="mt-0.5 text-slate-400 hover:text-white transition-colors shrink-0"
                     >
                       {step.completed ? (
                         <CheckSquare className="w-4 h-4 text-emerald-400" />
@@ -1398,6 +1587,15 @@ export const MicroStepsTracker: React.FC<MicroStepsTrackerProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
+                    {onDeleteStep && (
+                      <button
+                        onClick={() => onDeleteStep(step.id)}
+                        className="p-1 rounded text-slate-600 hover:text-rose-400 transition-colors"
+                        title="Xóa vi bước này"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       onClick={() => toggleExpand(step.id)}
                       className="p-1 rounded text-slate-500 hover:text-slate-300"

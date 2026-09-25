@@ -277,6 +277,41 @@ export default function App() {
     }));
   };
 
+  const handleReorderSteps = (reorderedSteps: MicroStep[]) => {
+    setPrediction((prev) => ({
+      ...prev,
+      microSteps: reorderedSteps,
+    }));
+  };
+
+  const handleMoveStep = (stepId: string, direction: 'up' | 'down') => {
+    setPrediction((prev) => {
+      const idx = prev.microSteps.findIndex((s) => s.id === stepId);
+      if (idx === -1) return prev;
+      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.microSteps.length) return prev;
+
+      const newSteps = [...prev.microSteps];
+      const temp = newSteps[idx];
+      newSteps[idx] = newSteps[targetIdx];
+      newSteps[targetIdx] = temp;
+
+      return {
+        ...prev,
+        microSteps: newSteps.map((s, i) => ({ ...s, order: i + 1 })),
+      };
+    });
+  };
+
+  const handleDeleteStep = (stepId: string) => {
+    setPrediction((prev) => ({
+      ...prev,
+      microSteps: prev.microSteps
+        .filter((s) => s.id !== stepId)
+        .map((s, i) => ({ ...s, order: i + 1 })),
+    }));
+  };
+
   const handleSaveContext = (updatedContext: ProjectContext) => {
     setCurrentContext(updatedContext);
     fetchPrediction(updatedContext);
@@ -437,6 +472,9 @@ export default function App() {
               activeGoal={activeGoal}
               onLinkStepToGoal={handleLinkStepToGoal}
               onSelectPreset={handleSelectPreset}
+              onDeleteStep={handleDeleteStep}
+              onReorderSteps={handleReorderSteps}
+              onMoveStep={handleMoveStep}
             />
           )}
 

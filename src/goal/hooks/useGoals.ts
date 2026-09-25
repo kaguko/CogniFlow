@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { LongTermGoal } from '../entities/longTermGoal';
 import { MicroStep } from '../../microStep/entities/microStep';
+import { offlineDb } from '../../services/indexedDbService';
 
 export interface UseGoalsProps {
   initialGoals: LongTermGoal[];
@@ -15,6 +16,36 @@ export function useGoals({
 }: UseGoalsProps) {
   const [goals, setGoals] = useState<LongTermGoal[]>(initialGoals);
   const [activeGoalId, setActiveGoalId] = useState<string>(initialGoals[0]?.id || '');
+
+  // Restore stored goals from IndexedDB
+  useEffect(() => {
+    let isMounted = true;
+    offlineDb.getItem<any>('domain_stores', 'long_term_goals').then((stored) => {
+      if (isMounted && stored && Array.isArray(stored.data) && stored.data.length > 0) {
+        setGoals(stored.data);
+        if (stored.activeGoalId) {
+          setActiveGoalId(stored.activeGoalId);
+        }
+      }
+    }).catch((err) => {
+      console.warn('[useGoals] Failed reading from IndexedDB:', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Save goals to IndexedDB
+  useEffect(() => {
+    if (goals.length > 0) {
+      offlineDb.setItem('domain_stores', {
+        id: 'long_term_goals',
+        data: goals,
+        activeGoalId,
+        updatedAt: Date.now(),
+      }).catch((e) => console.warn('[useGoals] Failed saving to IndexedDB:', e));
+    }
+  }, [goals, activeGoalId]);
 
   const activeGoal = useMemo(() => {
     return goals.find((g) => g.id === activeGoalId) || goals[0];

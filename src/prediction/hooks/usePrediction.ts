@@ -1,8 +1,9 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { PredictionPayload } from '../mod';
 import { ProjectContext } from '../../projectContext/entities/projectContext';
 import { decomposeOffline } from '../../services/offlineDecomposer';
 import { auth } from '../../lib/firebase';
+import { offlineDb } from '../../services/indexedDbService';
 
 export interface UsePredictionOptions {
   initialData: PredictionPayload;
@@ -11,6 +12,32 @@ export interface UsePredictionOptions {
 export function usePrediction({ initialData }: UsePredictionOptions) {
   const [prediction, setPrediction] = useState<PredictionPayload>(initialData);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Restore from IndexedDB on initial mount
+  useEffect(() => {
+    let isMounted = true;
+    offlineDb.getItem<any>('domain_stores', 'active_prediction').then((stored) => {
+      if (isMounted && stored && stored.data && stored.data.microSteps) {
+        setPrediction(stored.data);
+      }
+    }).catch((err) => {
+      console.warn('[usePrediction] Failed reading from IndexedDB:', err);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Save changes to IndexedDB
+  useEffect(() => {
+    if (prediction && prediction.microSteps) {
+      offlineDb.setItem('domain_stores', {
+        id: 'active_prediction',
+        data: prediction,
+        updatedAt: Date.now(),
+      }).catch((e) => console.warn('[usePrediction] Failed saving to IndexedDB:', e));
+    }
+  }, [prediction]);
 
   const fetchPrediction = useCallback(
     async (context: ProjectContext) => {
