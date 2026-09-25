@@ -18,7 +18,7 @@ const projectId =
   process.env.FIREBASE_PROJECT_ID ||
   process.env.VITE_FIREBASE_PROJECT_ID ||
   rawConfig.projectId ||
-  'platinum-totem-nlcf1';
+  'symflowage-app';
 
 if (!getApps().length) {
   try {

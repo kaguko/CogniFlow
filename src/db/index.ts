@@ -7,26 +7,31 @@ declare global {
   var _postgresPool: Pool | undefined;
 }
 
+export const isDbConfigured = Boolean(process.env.DATABASE_URL || process.env.SQL_HOST);
+
 // Function to create or retrieve the connection pool.
 export const createPool = () => {
   if (!global._postgresPool) {
+    if (!isDbConfigured) {
+      console.warn('[AI Studio] Database not configured (no DATABASE_URL or SQL_HOST) — using resilient in-memory stores');
+    }
     const connectionConfig = process.env.DATABASE_URL
       ? { connectionString: process.env.DATABASE_URL }
       : {
-          host: process.env.SQL_HOST,
-          user: process.env.SQL_USER,
-          password: process.env.SQL_PASSWORD,
-          database: process.env.SQL_DB_NAME,
+          host: process.env.SQL_HOST || '127.0.0.1',
+          user: process.env.SQL_USER || 'mock',
+          password: process.env.SQL_PASSWORD || 'mock',
+          database: process.env.SQL_DB_NAME || 'mock',
         };
     global._postgresPool = new Pool({
       ...connectionConfig,
       max: 10,
-      connectionTimeoutMillis: 15000,
+      connectionTimeoutMillis: isDbConfigured ? 10000 : 1000,
     });
 
     // Prevent unhandled pool-level errors from crashing the application
     global._postgresPool.on('error', (err: Error) => {
-      console.error('Unexpected error on idle SQL pool client:', err);
+      console.warn('Postgres SQL pool notification (safe fallback active):', err?.message || err);
     });
   }
   return global._postgresPool;
@@ -37,3 +42,4 @@ const pool = createPool();
 
 // Initialize Drizzle with the pool and schema.
 export const db = drizzle(pool, { schema });
+

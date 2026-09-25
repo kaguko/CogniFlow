@@ -13,11 +13,11 @@ const clientConfig = {
   authDomain:
     import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
     rawConfig.authDomain ||
-    'platinum-totem-nlcf1.firebaseapp.com',
+    '',
   projectId:
     import.meta.env.VITE_FIREBASE_PROJECT_ID ||
     rawConfig.projectId ||
-    'platinum-totem-nlcf1',
+    '',
   storageBucket:
     import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
     rawConfig.storageBucket ||
