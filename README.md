@@ -17,19 +17,21 @@
 ## 📖 Mục Lục
 
 1. [Tổng Quan & Triết Lý Thiết Kế](#-tổng-quan--triết-lý-thiết-kế)
-2. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
-3. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
-4. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
-5. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
-6. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
-7. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
-8. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
-9. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
-10. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
-11. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
-12. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-13. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
-14. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+2. [✅ Cập Nhật Đã Triển Khai](#-cập-nhật-đã-triển-khai-self-improving-agent--browser-telemetry)
+3. [⚖️ Lợi Ích So Với Không Dùng SymFlowAge](#-lợi-ích-khi-dùng-symflowage-so-với-không-dùng)
+4. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
+5. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
+6. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
+7. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
+8. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
+9. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
+10. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
+11. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
+12. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+13. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
+14. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+15. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
+16. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -47,6 +49,37 @@ Mọi tác vụ trong SymFlowAge đều được phân rã theo 6 nguyên lý k�
 - **Boundary Isolation**: Tách biệt ranh giới logic chính khỏi các phụ thuộc ngoại vi.
 - **YAGNI (You Aren't Gonna Need It)**: Giảm thiểu diện tích bề mặt giải pháp, chỉ làm đúng những gì cần thiết.
 - **TDD Verification Loop**: Mọi vi bước đều có tiêu chí kiểm chứng (Pass/Fail) rõ ràng trước khi đánh dấu hoàn thành.
+
+---
+
+## ✅ Cập Nhật Đã Triển Khai (Self-Improving Agent & Browser Telemetry)
+
+SymFlowAge hiện đã hoàn thiện một vòng làm việc có thể quan sát và tự hiệu chỉnh:
+
+1. **MCP Agent orchestration**: Agent gọi `decompose`, `guardrail`, `outcome` và `accuracy` qua MCP JSON-RPC hoặc SSE. Contract discovery quảng bá đầy đủ các tool feedback, accuracy và circuit breaker.
+2. **Persistent Calibration Memory**: Rule sinh ra từ outcome `DRIFT` hoặc `CRASH` được lưu atomically vào `.data/calibration-memory.json`, tự nạp lại khi server khởi động và giữ toàn bộ lịch sử trên disk. Có thể đổi vị trí bằng `SYMFLOWAGE_CALIBRATION_MEMORY_PATH`; 20 rule gần nhất được đưa vào context lập kế hoạch.
+3. **Browser Agent Activity**: MCP tool lifecycle phát event `started`/`completed` qua `GET /api/agent/activity/stream`. Khu vực **Theo Dõi Agent** trong UI nhận event bằng `EventSource` và đưa vào Event Log để người dùng thấy Agent đang làm gì và đã tới đâu.
+4. **Lean primary navigation**: Luồng chính tập trung vào Goals, Horizon, Microsteps, Bottlenecks, Why-First và Agent Activity. Các khu vực chuyên sâu vẫn tồn tại trong codebase nhưng không chiếm chỗ trong navigation chính.
+5. **Resilience và offline fallback**: Khi Gemini thiếu key hoặc gặp lỗi tạm thời, hệ thống vẫn trả contract micro-step hợp lệ bằng fallback engine.
+
+Các kiểm chứng gần nhất: TypeScript lint đạt, MCP telemetry `6/6`, UI smoke `6/6`, và persistent calibration memory được kiểm thử qua reload.
+
+> **Phạm vi bảo mật telemetry:** `/api/agent/activity/stream` hiện phù hợp cho local/internal browser và chỉ phát metadata lifecycle. Khi triển khai multi-user production, cần bổ sung xác thực browser và phân tách channel theo user/agent trước khi mở endpoint ra internet.
+
+## ⚖️ Lợi Ích Khi Dùng SymFlowAge So Với Không Dùng
+
+| Khía cạnh | Không dùng SymFlowAge | Dùng SymFlowAge |
+| :--- | :--- | :--- |
+| Bắt đầu công việc | Agent hoặc developer tự quyết định bước tiếp theo, dễ bị tê liệt phân tích | Mục tiêu được bẻ thành micro-step 5-15 phút có test criterion |
+| Kiểm soát hướng đi | Phát hiện drift sau khi đã tốn nhiều thời gian hoặc token | Guardrail kiểm tra trước khi thực thi và có Circuit Breaker khi cần |
+| Khả năng quan sát | Người dùng chỉ thấy kết quả cuối hoặc phải đọc log rời rạc | Browser Event Log hiển thị Agent đang gọi tool nào và trạng thái lifecycle |
+| Học từ lỗi | Bài học thường nằm trong chat hoặc mất sau khi restart | Calibration rule được lưu persistent và nạp lại ở các phiên sau |
+| Quyết định kỹ thuật | Dễ sa vào over-engineering, premature optimization hoặc reinventing the wheel | Semantic drift analysis, Why-First decision và YAGNI tập trung vào Core Goal |
+| Kiểm chứng | Có thể đánh dấu “xong” khi chưa có bằng chứng | Mỗi vi bước gắn với Pass/Fail, lint, E2E hoặc boundary test |
+| Khả năng chịu lỗi | Gemini/API lỗi có thể làm gián đoạn luồng làm việc | Fallback offline và resilience chain vẫn trả contract có thể hành động |
+| Chi phí nhận thức | Nhiều context, tab và quyết định phải tự giữ trong đầu | Zoom Macro/Meso/Micro, nano-step 2 phút và dashboard tiến độ gom context vào một nơi |
+
+SymFlowAge không thay thế developer. Nó làm rõ **bước tiếp theo**, **lý do cần dừng**, **bằng chứng đã kiểm chứng** và **bài học cần giữ lại** để developer vẫn là người quyết định cuối cùng.
 
 ---
 
@@ -95,11 +128,14 @@ SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho
 
 #### Các MCP Tools sẵn có:
 - `symflowage_decompose_task`: Phân rã tác vụ phức tạp thành vi bước 5-15 phút.
-- `symflowage_check_guardrail`: Kiểm tra trôi dạt mục tiêu (Goal Drift) trước khi thực thi action.
+- `symflowage_guardrail_drift_check`: Kiểm tra trôi dạt mục tiêu (Goal Drift) trước khi thực thi action.
 - `symflowage_report_outcome`: Gửi báo cáo kết quả thực tế (`SUCCESS`, `DRIFT`, `CRASH`, `ABANDONED`) để tối ưu hóa độ chính xác dự báo AI.
+- `symflowage_record_outcome`: Ghi nhận đường thực thi (`optimal`, `drift`, `bottleneck`, `crash`) cho backtesting.
 - `symflowage_configure_circuit_breaker`: Thiết lập ngưỡng Drift Score và cấu hình Outbound Webhook.
 - `symflowage_subscribe_alerts`: Đăng ký lắng nghe sự kiện ngắt mạch thời gian thực.
 - `symflowage_get_accuracy_score`: Truy vấn tỷ lệ dự báo chính xác và chỉ số backtesting 30 ngày.
+
+Browser UI có thể nhận telemetry Agent nội bộ qua `GET /api/agent/activity/stream`; stream này không thay thế MCP SSE `/api/mcp/sse`, vốn dành cho MCP client và guardrail alert.
 
 ---
 
@@ -307,7 +343,7 @@ Nạp ngay toàn bộ mục tiêu dài hạn, cột mốc và các vi bước h�
 - **Cảnh báo trực quan**: Tự động chuyển thanh tiến độ sang **Màu Vàng Cảnh Báo** khi độ tập trung $< 50\%$ hoặc có từ 2 Rabbit Holes trở lên, kèm giải thích lý do vì sao là bẫy và gợi ý phương án tinh gọn thay thế.
 - **Cơ Chế Học Hỏi & Khử Báo Động Giả (Active Calibration & False Positive Feedback Loop)**:
   - Nút **"Đây KHÔNG PHẢI Rabbit Hole (Báo False Positive)"** cho phép Solo Dev gắn cờ các tác vụ quan trọng (bảo mật OWASP, Stripe, kiến trúc lõi) bị AI đánh giá nhầm.
-  - Bộ nhớ Few-Shot Prompt Memory Buffer ghi nhận và chèn trực tiếp các quy tắc ngoại lệ vào System Instruction của Gemini Flash, đồng thời lọc sạch báo động ở tầng Hậu xử lý (Post-processor), đảm bảo **100% không tái diễn cảnh báo sai**.
+  - Calibration memory ghi nhận rule từ feedback và chèn các rule gần nhất vào context phân rã. Memory được lưu persistent ở `.data/calibration-memory.json` để không mất sau khi restart; rule vẫn cần được developer xác nhận và không được xem là bảo đảm tuyệt đối không có false positive.
   - Dashboard đo lường độ chính xác thời gian thực (**Precision Score %**) và quản lý danh sách quy tắc ngoại lệ đã học.
 
 ### 3. ⚡ Phân Rã "Nano-Steps 2 Phút" Giảm Tải Nhận Thức Triệt Để (Zero Cognitive Load UX)
@@ -709,6 +745,7 @@ Hệ thống được trang bị module tự phục hồi tại `src/lib/geminiR
 | :--- | :---: | :--- |
 | `GEMINI_API_KEY` | Khuyến nghị | Khóa truy cập Google Gemini API (hoặc dùng `VITE_GEMINI_API_KEY`) |
 | `SYMFLOWAGE_M2M_API_KEY` | Bắt buộc cho Agent/MCP | Bearer key xác thực các route `/api/v1/agent/*` và MCP |
+| `SYMFLOWAGE_CALIBRATION_MEMORY_PATH` | Không | Đường dẫn file JSON persistent cho calibration rules; mặc định `.data/calibration-memory.json` |
 | `APP_URL` | Không | Địa chỉ URL triển khai của ứng dụng (Cloud Run / Vercel) |
 | `DATABASE_URL` | Tùy chọn | URL kết nối PostgreSQL (dùng cho pgvector semantic search) |
 | `VITE_FIREBASE_API_KEY` | Tùy chọn | Firebase Web API key; cần để khởi tạo Firebase Auth |
@@ -765,7 +802,10 @@ npx playwright test tests/ui-smoke.spec.ts --reporter=line
 ### Kết quả đã xác minh thực tế
 Trong dev container này, các kiểm tra đã được chạy thành công:
 - `npm run lint` ✅
-- Playwright E2E/API/UI/MCP/fallback: **27 passed** ✅
+- Agent API regression: **7 passed** ✅
+- MCP SSE/JSON-RPC và browser telemetry stream: **6 passed** ✅
+- UI smoke tests, gồm Agent Activity Event Log: **6 passed** ✅
+- Persistent calibration memory reload: **1 passed** ✅
 - MCP SSE handshake và Circuit Breaker `HALT_EXECUTION` ✅
 - Fallback khi thiếu Gemini key và mô phỏng `429 RESOURCE_EXHAUSTED` ✅
 - `curl http://localhost:3000/openapi.json` trả về `HTTP 200 OK` ✅
