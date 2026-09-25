@@ -11,9 +11,6 @@ import {
   Code2,
   Telescope,
   Target,
-  Database,
-  Zap,
-  GraduationCap,
   Bot,
 } from 'lucide-react';
 
@@ -78,31 +75,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       description: 'Tư duy phản biện Socratic',
     },
     {
-      id: 'rag',
-      label: 'RAG & Tìm Kiếm Ngữ Nghĩa',
-      icon: Database,
-      badge: 'pgvector',
-      description: 'Cosine search & Grounded Q&A',
-    },
-    {
-      id: 'jsonb_index',
-      label: 'Hiệu Năng PostgreSQL Lab',
-      icon: Zap,
-      badge: 'Chuyên sâu',
-      description: 'Chỉ mục JSONB, FOR NO KEY UPDATE & Thuế TOAST',
-    },
-    {
       id: 'behavioral',
       label: 'Phân Tích Hành Vi',
       icon: Activity,
       description: 'Vận tốc & ma sát nhận thức',
-    },
-    {
-      id: 'academic',
-      label: 'Khung Nghiên Cứu Học Thuật',
-      icon: GraduationCap,
-      badge: 'Luận văn',
-      description: 'Dàn ý 5 chương, RQs & Literature',
     },
     {
       id: 'agent_activity',
