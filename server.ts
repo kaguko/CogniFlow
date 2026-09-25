@@ -46,6 +46,27 @@ app.use(express.json({ limit: '10mb' }));
 // Mount Model Context Protocol (MCP) Server endpoints (/api/mcp, /api/mcp/sse)
 mountMcpRoutes(app);
 
+// Lightweight Health & Load-Testing Probes
+app.get('/api/health', (_req: Request, res: Response) => {
+  const mem = process.memoryUsage();
+  res.json({
+    status: 'healthy',
+    uptimeSeconds: Math.floor(process.uptime()),
+    timestamp: Date.now(),
+    memory: {
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+    },
+    system: 'SymFlowAge M2M Swarm Core',
+  });
+});
+
+app.get('/api/ping', (_req: Request, res: Response) => {
+  res.setHeader('Content-Type', 'text/plain');
+  res.send('pong');
+});
+
 // OpenAPI Specification & Interactive Swagger UI
 app.get('/openapi.json', (_req: Request, res: Response) => {
   res.json(openapiSpec);
