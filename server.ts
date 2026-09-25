@@ -251,7 +251,31 @@ async function generateAgentDecomposition(goalTitle: string, technicalContext: u
         temperature: 0.2,
       },
     });
-    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const parsed = JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const rawSteps = Array.isArray(parsed?.microSteps)
+      ? parsed.microSteps
+      : Array.isArray(parsed?.steps)
+      ? parsed.steps
+      : [];
+    if (rawSteps.length === 0) {
+      return buildSmartFallbackDecompositionSteps(goalTitle);
+    }
+    const microSteps = rawSteps.map((step: any, index: number) => ({
+      id: step.id || `step_${Date.now()}_${index + 1}`,
+      order: typeof step.order === 'number' ? step.order : index + 1,
+      title: String(step.title || `Vi bước ${index + 1}`),
+      durationMinutes: Math.min(15, Math.max(5, Number(step.durationMinutes) || 10)),
+      singleAction: String(step.singleAction || step.title || ''),
+      testCriterion: String(step.testCriterion || 'Test pass'),
+      programmerPrinciple: step.programmerPrinciple || 'Divide & Conquer',
+      unblockTip: step.unblockTip || '',
+      completed: false,
+    }));
+    return {
+      taskTitle: parsed.taskTitle || goalTitle,
+      microSteps,
+      leanAdvice: parsed.leanAdvice || 'Tập trung hoàn thành từng vi bước nhỏ khép kín.',
+    };
   } catch (error: any) {
     console.warn('[agent/decompose] fallback:', error?.message || error);
     return buildSmartFallbackDecompositionSteps(goalTitle);
@@ -262,9 +286,9 @@ async function generateAgentDecision(dilemma: string, context: unknown) {
   if (!ai) return buildSmartFallbackDecision(dilemma, context);
 
   try {
-    const response = await generateContentWithFallback(ai, {
+    const aiPromise = generateContentWithFallback(ai, {
       contents: `Phân tích quyết định kỹ thuật sau theo First Principles.\nDilemma: ${dilemma}\nContext: ${JSON.stringify(context || {})}`,
-      taskComplexity: 'complex',
+      taskComplexity: 'simple',
       config: {
         systemInstruction:
           'Trả về JSON thuần với dilemma, whyRootProblem, alternativesEvaluated, tradeOffsAndRisks, howRecommendation, verificationBasis, socraticQuestions và microActionPlan.',
@@ -272,7 +296,16 @@ async function generateAgentDecision(dilemma: string, context: unknown) {
         temperature: 0.2,
       },
     });
-    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Agent decision timed out')), 6000)
+    );
+    const response = await Promise.race([aiPromise, timeoutPromise]);
+    const parsed = JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const fallback = buildSmartFallbackDecision(dilemma, context);
+    return {
+      ...fallback,
+      ...parsed,
+    };
   } catch (error: any) {
     console.warn('[agent/socratic-decision] fallback:', error?.message || error);
     return buildSmartFallbackDecision(dilemma, context);
@@ -283,17 +316,30 @@ async function generateAgentPrediction(context: any) {
   if (!ai) return buildSmartFallbackPrediction(context);
 
   try {
-    const response = await generateContentWithFallback(ai, {
+    const aiPromise = generateContentWithFallback(ai, {
       contents: `Dự báo ba lộ trình thực thi cho context sau: ${JSON.stringify(context)}`,
-      taskComplexity: 'medium',
+      taskComplexity: 'simple',
       config: {
         systemInstruction:
           'Trả về JSON thuần với strategicWhySummary, timelines gồm đúng ba pathType optimal/drift/bottleneck, microSteps, bottlenecks, riskMatrix và behavioralInsights. Mỗi timeline phải có probability, milestones và consequence.',
         responseMimeType: 'application/json',
-        temperature: 0.3,
+        temperature: 0.2,
       },
     });
-    return JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Agent prediction timed out')), 6000)
+    );
+    const response = await Promise.race([aiPromise, timeoutPromise]);
+    const parsed = JSON.parse(cleanJsonResponse(response.text || '{}'));
+    const fallback = buildSmartFallbackPrediction(context);
+    return {
+      strategicWhySummary: parsed.strategicWhySummary || fallback.strategicWhySummary,
+      timelines: Array.isArray(parsed.timelines) && parsed.timelines.length > 0 ? parsed.timelines : fallback.timelines,
+      microSteps: Array.isArray(parsed.microSteps) && parsed.microSteps.length > 0 ? parsed.microSteps : fallback.microSteps,
+      bottlenecks: Array.isArray(parsed.bottlenecks) && parsed.bottlenecks.length > 0 ? parsed.bottlenecks : fallback.bottlenecks,
+      riskMatrix: Array.isArray(parsed.riskMatrix) && parsed.riskMatrix.length > 0 ? parsed.riskMatrix : fallback.riskMatrix,
+      behavioralInsights: parsed.behavioralInsights || fallback.behavioralInsights,
+    };
   } catch (error: any) {
     console.warn('[agent/predict] fallback:', error?.message || error);
     return buildSmartFallbackPrediction(context);

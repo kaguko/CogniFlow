@@ -349,23 +349,51 @@ Bắt buộc trả về đúng định dạng JSON:
           }${calibrationContext}`;
 
           try {
-            const response = await generateContentWithFallback(ai, {
+            const aiPromise = generateContentWithFallback(ai, {
               contents: [{ role: 'user', parts: [{ text: prompt }] }],
               config: {
                 systemInstruction,
                 responseMimeType: 'application/json',
               },
-              taskComplexity: 'medium',
+              taskComplexity: 'simple',
             });
+            const timeoutPromise = new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('Decompose AI timed out')), 5000)
+            );
+            const response = await Promise.race([aiPromise, timeoutPromise]);
 
             const parsed = JSON.parse(cleanJsonResponse(response.text || '{}'));
             return {
-              content: [{ type: 'text', text: JSON.stringify(parsed, null, 2) }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      activeCalibrationRules: calibrationRules,
+                      ...parsed,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
             };
           } catch (err: any) {
             const fallback = buildSmartFallbackDecompositionSteps(taskTitle);
             return {
-              content: [{ type: 'text', text: JSON.stringify(fallback, null, 2) }],
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify(
+                    {
+                      activeCalibrationRules: calibrationRules,
+                      ...fallback,
+                    },
+                    null,
+                    2
+                  ),
+                },
+              ],
             };
           }
         } else {

@@ -356,6 +356,53 @@ export default function App() {
 
         {/* Content Viewport */}
         <main className={`flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full transition-all ${isFocusMode ? 'py-8' : ''}`}>
+          {/* Developer Orientation Bar */}
+          {!isFocusMode && (
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800/80 text-xs">
+              <div className="flex items-center gap-2 text-slate-400">
+                <span className="font-semibold text-slate-200 uppercase tracking-wider text-[11px]">
+                  {activeTab === 'goals' && 'Tầng 1 · Macro Goal Planning'}
+                  {activeTab === 'horizon' && 'Tầng 2 · Meso Predictive Horizon'}
+                  {activeTab === 'microsteps' && 'Tầng 3 · Micro Focus (≤15 Phút)'}
+                  {activeTab === 'bottlenecks' && 'Giám Sát Rủi Ro & Drift Radar'}
+                  {activeTab === 'whyfirst' && 'Cố Vấn Phản Biện Socratic Why-First'}
+                  {activeTab === 'behavioral' && 'Phân Tích Hành Vi & Vận Tốc Code'}
+                  {activeTab === 'agent_activity' && 'Điều Phối & Telemetry Đội Ngũ Agent'}
+                  {activeTab === 'academic' && 'Khung Nghiên Cứu Khoa Học & Luận Văn'}
+                  {activeTab === 'rag' && 'Cơ Sở Tri Thức RAG & pgvector'}
+                  {activeTab === 'jsonb_index' && 'Hiệu Năng PostgreSQL Lab'}
+                </span>
+                <span className="text-slate-600">·</span>
+                <span className="text-slate-400">
+                  {pendingMicroStepsCount > 0 ? `${pendingMicroStepsCount} vi bước đang mở` : 'Tất cả vi bước đã xong'}
+                </span>
+                {currentDriftScore > 25 && (
+                  <>
+                    <span className="text-slate-600">·</span>
+                    <button
+                      onClick={() => handleTabChange('whyfirst')}
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-medium underline underline-offset-2"
+                    >
+                      ⚠️ Drift {currentDriftScore}%: Kiểm tra bẫy kỹ thuật
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsFocusMode(true)}
+                  className="px-2.5 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors border border-slate-800 flex items-center gap-1 text-[11px]"
+                  title="Ẩn toàn bộ menu để tập trung lập trình (Shift + F)"
+                >
+                  <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Bật Focus Mode</span>
+                  <kbd className="hidden sm:inline px-1 py-0.2 rounded bg-slate-800 text-[9px] font-mono text-slate-400">Shift+F</kbd>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* TẦNG 1: Long-term Goal Planning & Horizon View */}
           {activeTab === 'goals' && (
             <GoalCanvasView

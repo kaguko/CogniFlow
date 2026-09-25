@@ -102,39 +102,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  aria-label={`Điều hướng: ${item.label}`}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded text-left transition-colors group ${
-                    isActive
-                      ? 'bg-indigo-950/70 text-indigo-300 font-medium border border-indigo-800/60'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${
-                        isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-400'
-                      }`}
-                    />
-                    <div className="truncate">
-                      <div className="text-xs truncate">{item.label}</div>
-                      <div className="text-[10px] text-slate-600 truncate">{item.description}</div>
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    aria-label={`Điều hướng: ${item.label}`}
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all group relative ${
+                      isActive
+                        ? 'bg-indigo-950/60 text-white font-medium border border-indigo-500/40 shadow-sm shadow-indigo-950/50'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent'
+                    }`}
+                  >
+                    {isActive && (
+                      <span className="absolute left-0 top-1.5 bottom-1.5 w-1 rounded-r bg-indigo-500" />
+                    )}
+                    <div className="flex items-center gap-2.5 min-w-0 pl-1">
+                      <Icon
+                        className={`w-4 h-4 shrink-0 transition-colors ${
+                          isActive ? 'text-indigo-400' : 'text-slate-500 group-hover:text-slate-300'
+                        }`}
+                      />
+                      <div className="truncate">
+                        <div className="text-xs truncate font-medium">{item.label}</div>
+                        <div className="text-[10px] text-slate-500 truncate group-hover:text-slate-400">{item.description}</div>
+                      </div>
                     </div>
-                  </div>
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
-                        item.badgeVariant === 'danger'
-                          ? 'bg-rose-950/80 text-rose-300 border border-rose-800/40'
-                          : 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/40'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
+                    {item.badge && (
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${
+                          item.badgeVariant === 'danger'
+                            ? 'bg-rose-950/80 text-rose-300 border border-rose-800/40'
+                            : 'bg-indigo-900/50 text-indigo-300 border border-indigo-700/40'
+                        }`}
+                      >
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
               );
             })}
           </nav>
