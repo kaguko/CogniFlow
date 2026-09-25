@@ -50,6 +50,7 @@ export interface M2MApiKey {
   id: string;
   name: string;
   keyPrefix: string;
+  fullKey?: string;
   createdAt: string;
   lastUsedAt: string;
   rateLimit: string;

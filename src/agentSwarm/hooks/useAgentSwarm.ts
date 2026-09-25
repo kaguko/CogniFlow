@@ -95,6 +95,7 @@ const INITIAL_API_KEYS: M2MApiKey[] = [
     id: 'key_live_1',
     name: 'Production Multi-Agent Swarm (CrewAI Mesh)',
     keyPrefix: 'sym_live_88a91c',
+    fullKey: 'sym_live_88a91c_7e5d8b2a4c1f9a0d',
     createdAt: '2026-09-20',
     lastUsedAt: 'Vừa xong',
     rateLimit: '120 req/phút',
@@ -105,6 +106,7 @@ const INITIAL_API_KEYS: M2MApiKey[] = [
     id: 'key_live_2',
     name: 'Local LangGraph Developer Sandbox',
     keyPrefix: 'sym_dev_44d21f',
+    fullKey: 'sym_dev_44d21f_3b6a9c8d1e5f0d2e',
     createdAt: '2026-09-22',
     lastUsedAt: '15 phút trước',
     rateLimit: '60 req/phút',
@@ -403,10 +405,13 @@ export function useAgentSwarm() {
 
   // Thêm M2M API Key mới
   const generateApiKey = useCallback((name: string) => {
+    const prefix = `sym_live_${Math.random().toString(36).substring(2, 8)}`;
+    const randomSuffix = Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
     const newKey: M2MApiKey = {
       id: `key_${Date.now()}`,
       name: name.trim() || 'Custom Multi-Agent Client',
-      keyPrefix: `sym_live_${Math.random().toString(36).substring(2, 8)}`,
+      keyPrefix: prefix,
+      fullKey: `${prefix}_${randomSuffix}`,
       createdAt: new Date().toISOString().split('T')[0],
       lastUsedAt: 'Chưa sử dụng',
       rateLimit: '120 req/phút',

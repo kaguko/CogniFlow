@@ -27,6 +27,7 @@ export function AgentSwarmDashboard() {
   const [newKeyName, setNewKeyName] = useState('');
   const [selectedSnippetIdx, setSelectedSnippetIdx] = useState(0);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [copiedKeyId, setCopiedKeyId] = useState<string | null>(null);
 
   // Interactive Webhook / Circuit Breaker State Configuration
   const [driftThreshold, setDriftThreshold] = useState(40);
@@ -845,9 +846,25 @@ export function AgentSwarmDashboard() {
                 </thead>
                 <tbody className="divide-y divide-slate-800 font-mono text-[11px]">
                   {apiKeys.map((key) => (
-                    <tr key={key.id} className="text-slate-300">
+                    <tr key={key.id} className="text-slate-300 border-b border-slate-800/60 hover:bg-slate-900/20 transition-colors">
                       <td className="py-2.5 font-sans font-medium text-white">{key.name}</td>
-                      <td className="py-2.5 text-indigo-400 font-bold">{key.keyPrefix}••••••••</td>
+                      <td className="py-2.5 text-indigo-400 font-bold">
+                        <div className="flex items-center gap-2">
+                          <span>{key.keyPrefix}••••••••</span>
+                          <button
+                            onClick={() => {
+                              const valueToCopy = key.fullKey || `${key.keyPrefix}_mockkey789`;
+                              navigator.clipboard.writeText(valueToCopy);
+                              setCopiedKeyId(key.id);
+                              setTimeout(() => setCopiedKeyId(null), 2000);
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-200 hover:text-white font-sans transition-colors cursor-pointer"
+                            title="Sao chép khóa M2M đầy đủ"
+                          >
+                            {copiedKeyId === key.id ? '✓ Copied!' : '📋 Copy Key'}
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-2.5 text-slate-500">{key.createdAt}</td>
                       <td className="py-2.5 text-slate-400">{key.lastUsedAt}</td>
                       <td className="py-2.5 text-slate-300">{key.totalRequests.toLocaleString()}</td>
