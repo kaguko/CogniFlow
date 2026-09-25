@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AgentNode, AgentTask, AgenticMemoryEntry, M2MApiKey } from '../entities/agent';
 import { SwarmState, SwarmExecutionLog } from '../entities/swarm';
 
@@ -195,6 +195,49 @@ export function useAgentSwarm() {
       executionLogs: [newLog, ...prev.executionLogs].slice(0, 100),
     }));
   }, []);
+
+  useEffect(() => {
+    const stream = new EventSource('/api/agent/activity/stream');
+    const handleActivity = (event: Event) => {
+      try {
+        const activity = JSON.parse((event as MessageEvent<string>).data) as {
+          agentId: string;
+          toolName: string;
+          phase: 'connected' | 'started' | 'completed';
+          status: 'info' | 'success' | 'critical';
+          summary: string;
+          driftScore?: number;
+        };
+
+        if (activity.phase === 'connected') return;
+
+        const actionType: SwarmExecutionLog['actionType'] = activity.toolName.includes('guardrail')
+          ? 'DRIFT_CHECK'
+          : activity.toolName.includes('decompose')
+          ? 'DECOMPOSE_INVOKED'
+          : activity.toolName.includes('outcome') || activity.toolName.includes('accuracy')
+          ? 'MEMORY_SYNC'
+          : 'CODE_GENERATED';
+
+        addExecutionLog({
+          sourceAgentId: activity.agentId,
+          sourceAgentName: 'MCP Agent',
+          actionType,
+          payloadSummary: activity.summary,
+          driftScore: activity.driftScore,
+          status: activity.status,
+        });
+      } catch {
+        stream.close();
+      }
+    };
+
+    stream.addEventListener('agent_activity', handleActivity);
+    return () => {
+      stream.removeEventListener('agent_activity', handleActivity);
+      stream.close();
+    };
+  }, [addExecutionLog]);
 
   // Kích hoạt mô phỏng chu trình Multi-Agent Swarm
   const runSwarmCycle = useCallback(async (objective: string) => {

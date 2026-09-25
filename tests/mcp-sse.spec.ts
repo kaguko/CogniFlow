@@ -55,6 +55,50 @@ test.describe('MCP SSE transport', () => {
     controller.abort();
   });
 
+  test('streams MCP agent activity to the browser telemetry channel', async ({ request }) => {
+    const controller = new AbortController();
+    const response = await fetch(`${baseUrl}/api/agent/activity/stream`, {
+      signal: controller.signal,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+
+    const reader = response.body!.getReader();
+    const initialChunk = new TextDecoder().decode((await reader.read()).value);
+    expect(initialChunk).toContain('event: agent_activity');
+    expect(initialChunk).toContain('Browser đã kết nối telemetry stream của Agent.');
+
+    const toolResponse = await request.post('/api/mcp', {
+      headers: mcpHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 10,
+        method: 'tools/call',
+        params: {
+          name: 'symflowage_decompose_task',
+          arguments: { taskTitle: 'Kiểm thử browser telemetry' },
+        },
+      },
+    });
+    expect(toolResponse.ok()).toBe(true);
+
+    let telemetry = '';
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && !telemetry.includes('Agent hoàn tất symflowage_decompose_task.')) {
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Timed out waiting for agent telemetry')), 500)),
+      ]);
+      telemetry += new TextDecoder().decode(chunk.value);
+    }
+
+    expect(telemetry).toContain('Agent bắt đầu gọi symflowage_decompose_task.');
+    expect(telemetry).toContain('Agent hoàn tất symflowage_decompose_task.');
+
+    await reader.cancel();
+    controller.abort();
+  });
+
   test('publishes HALT_EXECUTION when the agent drifts into a technical rabbit hole', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/mcp/sse`, {

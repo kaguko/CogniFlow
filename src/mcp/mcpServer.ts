@@ -295,6 +295,16 @@ export function createSymFlowAgeMcpServer() {
   // Handle Tool Calls
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
+    let activityStatus: AgentActivityEvent['status'] = 'success';
+    publishAgentActivity({
+      id: `activity_${randomUUID().slice(0, 8)}`,
+      timestamp: new Date().toISOString(),
+      agentId: String(args.agentId || 'mcp-agent'),
+      toolName: name,
+      phase: 'started',
+      status: 'info',
+      summary: `Agent bắt đầu gọi ${name}.`,
+    });
 
     try {
       if (name === 'symflowage_decompose_task') {
@@ -797,6 +807,7 @@ Bắt buộc trả về đúng JSON:
 
       throw new Error(`Unknown MCP Tool: ${name}`);
     } catch (err: any) {
+      activityStatus = 'critical';
       return {
         isError: true,
         content: [
@@ -806,10 +817,44 @@ Bắt buộc trả về đúng JSON:
           },
         ],
       };
+    } finally {
+      publishAgentActivity({
+        id: `activity_${randomUUID().slice(0, 8)}`,
+        timestamp: new Date().toISOString(),
+        agentId: String(args.agentId || 'mcp-agent'),
+        toolName: name,
+        phase: 'completed',
+        status: activityStatus,
+        summary: activityStatus === 'success'
+          ? `Agent hoàn tất ${name}.`
+          : `Agent dừng tại ${name} do lỗi hoặc guardrail.`,
+      });
     }
   });
 
   return server;
+}
+
+export interface AgentActivityEvent {
+  id: string;
+  timestamp: string;
+  agentId: string;
+  toolName: string;
+  phase: 'connected' | 'started' | 'completed';
+  status: 'info' | 'success' | 'critical';
+  summary: string;
+  driftScore?: number;
+}
+
+const activitySubscribers = new Set<(event: AgentActivityEvent) => void>();
+
+export function registerAgentActivitySubscriber(callback: (event: AgentActivityEvent) => void) {
+  activitySubscribers.add(callback);
+  return () => activitySubscribers.delete(callback);
+}
+
+function publishAgentActivity(event: AgentActivityEvent) {
+  for (const subscriber of activitySubscribers) subscriber(event);
 }
 
 // Active SSE Transports Map
@@ -819,6 +864,33 @@ const sseTransports = new Map<string, SSEServerTransport>();
  * Express HTTP & SSE endpoint handlers for MCP Server integration
  */
 export function mountMcpRoutes(app: any) {
+  app.get('/api/agent/activity/stream', (_req: any, res: any) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    const writeEvent = (event: AgentActivityEvent) => {
+      res.write(`event: agent_activity\ndata: ${JSON.stringify(event)}\n\n`);
+    };
+    const unregister = registerAgentActivitySubscriber(writeEvent);
+    const heartbeat = setInterval(() => res.write(': heartbeat\n\n'), 15_000);
+    writeEvent({
+      id: `activity_${randomUUID().slice(0, 8)}`,
+      timestamp: new Date().toISOString(),
+      agentId: 'system',
+      toolName: 'browser_activity_stream',
+      phase: 'connected',
+      status: 'info',
+      summary: 'Browser đã kết nối telemetry stream của Agent.',
+    });
+
+    res.on('close', () => {
+      clearInterval(heartbeat);
+      unregister();
+    });
+  });
+
   // 1. JSON-RPC Direct HTTP POST endpoint (/api/mcp)
   // For lightweight HTTP JSON-RPC tools invocation by Cursor / Windsurf / Custom Agents
   app.post('/api/mcp', requireAgentAuth, async (req: any, res: any) => {
