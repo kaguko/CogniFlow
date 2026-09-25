@@ -883,6 +883,28 @@ app.get('/api/v1/agent/circuit-breaker/config', handleGetCircuitBreakerConfig);
 app.post('/api/circuit-breaker/config', handleUpdateCircuitBreakerConfig);
 app.post('/api/v1/agent/circuit-breaker/config', requireAgentAuth, handleUpdateCircuitBreakerConfig);
 
+app.get('/api/agent/calibration-rules', (_req: Request, res: Response) => {
+  return res.json({
+    rules: getActiveCalibrationRules(),
+    total: getActiveCalibrationRules().length,
+  });
+});
+
+app.post('/api/agent/feedback/false-positive', (req: Request, res: Response) => {
+  const { taskId, taskTitle, reason, detectedType } = req.body || {};
+  const cleanTitle = String(taskTitle || taskId || 'Tác vụ được người dùng xác nhận hợp lệ').trim();
+  const cleanReason = String(reason || 'Người dùng xác nhận tác vụ không bị sa đà (False Positive)').trim();
+  const requestId = String(taskId || randomUUID().slice(0, 8));
+
+  addCalibrationRule('DRIFT', requestId, `[FALSE_POSITIVE_EXEMPTION] ${cleanTitle}: ${cleanReason}`);
+
+  return res.json({
+    success: true,
+    message: 'Đã nạp quy tắc ngoại lệ False Positive vào Calibration Memory thành công.',
+    activeCalibrationRules: getActiveCalibrationRules(),
+  });
+});
+
 app.get('/api/admin/backtest', async (req: Request, res: Response) => {
   if (!process.env.ADMIN_TOKEN || req.header('x-admin-token') !== process.env.ADMIN_TOKEN) {
     return res.status(403).json({ error: 'forbidden' });

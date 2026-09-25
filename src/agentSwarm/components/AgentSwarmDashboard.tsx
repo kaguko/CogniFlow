@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { useAgentSwarm } from '../hooks/useAgentSwarm';
 import { M2M_INTEGRATION_SNIPPETS } from '../valueObjects/m2m';
 import { AgentNode, AgentRole } from '../entities/agent';
+import { VisualTaskTreeMap } from './VisualTaskTreeMap';
+import { DriftScoreMeterAndSparkline } from './DriftScoreMeterAndSparkline';
+import { RabbitHoleCalloutAndFalsePositive } from './RabbitHoleCalloutAndFalsePositive';
+import { EffortSyncAndLifecyclePulse, LifecyclePhase } from './EffortSyncAndLifecyclePulse';
+import { PredictiveHorizonTrajectories } from './PredictiveHorizonTrajectories';
 
 export function AgentSwarmDashboard() {
   const {
@@ -14,11 +19,32 @@ export function AgentSwarmDashboard() {
     generateApiKey,
   } = useAgentSwarm();
 
-  const [activeSubTab, setActiveSubTab] = useState<'mesh' | 'guardrails' | 'logs' | 'memory' | 'm2m_api'>('mesh');
+  const [activeSubTab, setActiveSubTab] = useState<
+    'mesh' | 'tree_map' | 'drift_risk' | 'guardrails' | 'trajectories' | 'logs' | 'memory' | 'm2m_api'
+  >('mesh');
   const [swarmGoalInput, setSwarmGoalInput] = useState(swarmState.objective);
   const [newKeyName, setNewKeyName] = useState('');
   const [selectedSnippetIdx, setSelectedSnippetIdx] = useState(0);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  // Compute dynamic lifecycle phase for Status Pulse LED
+  const currentLifecyclePhase: LifecyclePhase = swarmState.circuitBreaker.isTriggered
+    ? 'HALT_EXECUTION'
+    : swarmState.agents.some((a) => a.status === 'executing')
+    ? 'EXECUTING'
+    : swarmState.agents.some((a) => a.status === 'thinking')
+    ? 'DECOMPOSING'
+    : swarmState.averageDriftScore > 30
+    ? 'GUARDRAIL_CHECK'
+    : 'IDLE';
+
+  const activeExecutingAgent = swarmState.agents.find(
+    (a) => a.status === 'executing' || a.status === 'thinking'
+  );
+  const activeTaskTitle =
+    activeExecutingAgent?.currentTaskTitle ||
+    swarmState.activeTasks.find((t) => t.status === 'in_progress')?.title ||
+    'Triển khai vi bước 1: Pure Entity & Contract';
 
   const handleCopyCode = (code: string, idx: number) => {
     navigator.clipboard.writeText(code);
@@ -163,31 +189,70 @@ export function AgentSwarmDashboard() {
         </div>
       </div>
 
+      {/* Dual Effort Sync & Status Pulse LED Component */}
+      <EffortSyncAndLifecyclePulse
+        currentPhase={currentLifecyclePhase}
+        activeTaskTitle={activeTaskTitle}
+        estimatedMinutes={10}
+        initialElapsedSeconds={420}
+        isSimulating={isRunningSimulation || currentLifecyclePhase === 'EXECUTING'}
+      />
+
       {/* Navigation Sub-Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
         <button
           onClick={() => setActiveSubTab('mesh')}
-          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === 'mesh'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          <span>🕸️</span> Swarm Mesh (4 Nodes)
+          <span>🕸️</span> Swarm Mesh & Cây Tác Vụ
+        </button>
+        <button
+          onClick={() => setActiveSubTab('tree_map')}
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            activeSubTab === 'tree_map'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          <span>🌳</span> Cây Tọa Độ (Node Map)
+        </button>
+        <button
+          onClick={() => setActiveSubTab('drift_risk')}
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            activeSubTab === 'drift_risk'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          <span>🎛️</span> Đo Nguy Cơ & Bẫy Sa Đà
+        </button>
+        <button
+          onClick={() => setActiveSubTab('trajectories')}
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            activeSubTab === 'trajectories'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          <span>🔮</span> 3 Dòng Thời Gian Dự Báo
         </button>
         <button
           onClick={() => setActiveSubTab('guardrails')}
-          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === 'guardrails'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          <span>🛡️</span> Rào Chắn Drift & Hallucination
+          <span>🛡️</span> Rào Chắn Socratic
         </button>
         <button
           onClick={() => setActiveSubTab('logs')}
-          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === 'logs'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
@@ -200,23 +265,23 @@ export function AgentSwarmDashboard() {
         </button>
         <button
           onClick={() => setActiveSubTab('memory')}
-          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === 'memory'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          <span>🧠</span> Agentic Memory (Vector RAG)
+          <span>🧠</span> Agentic Memory
         </button>
         <button
           onClick={() => setActiveSubTab('m2m_api')}
-          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 ${
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
             activeSubTab === 'm2m_api'
               ? 'bg-indigo-600 text-white shadow-sm'
               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
           }`}
         >
-          <span>🔑</span> M2M Gateway & SDK Snippets
+          <span>🔑</span> M2M Gateway
         </button>
       </div>
 
@@ -304,12 +369,52 @@ export function AgentSwarmDashboard() {
               </div>
             </div>
           </div>
+
+          {/* 3-Cognitive-Layer Visual Task Coordinate Tree Map */}
+          <VisualTaskTreeMap
+            goalTitle={swarmState.objective}
+            agents={swarmState.agents}
+            activeTasks={swarmState.activeTasks}
+          />
+        </div>
+      )}
+
+      {/* SUB-TAB: Dedicated Tree Map View */}
+      {activeSubTab === 'tree_map' && (
+        <div className="space-y-6">
+          <VisualTaskTreeMap
+            goalTitle={swarmState.objective}
+            agents={swarmState.agents}
+            activeTasks={swarmState.activeTasks}
+          />
+        </div>
+      )}
+
+      {/* SUB-TAB: Drift Risk Meter & Rabbit Hole Callout */}
+      {activeSubTab === 'drift_risk' && (
+        <div className="space-y-6">
+          <DriftScoreMeterAndSparkline
+            currentDriftScore={swarmState.averageDriftScore}
+            averageDriftScore={swarmState.averageDriftScore}
+          />
+          <RabbitHoleCalloutAndFalsePositive />
+        </div>
+      )}
+
+      {/* SUB-TAB: Predictive Horizon 3 Trajectories */}
+      {activeSubTab === 'trajectories' && (
+        <div className="space-y-6">
+          <PredictiveHorizonTrajectories />
         </div>
       )}
 
       {/* SUB-TAB 2: Guardrails & Drift Telemetry */}
       {activeSubTab === 'guardrails' && (
         <div className="space-y-6">
+          <DriftScoreMeterAndSparkline
+            currentDriftScore={swarmState.averageDriftScore}
+            averageDriftScore={swarmState.averageDriftScore}
+          />
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 p-6 rounded-xl border border-slate-800 bg-slate-900 space-y-4">
               <h3 className="text-base font-bold text-white flex items-center gap-2">
