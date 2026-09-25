@@ -14,6 +14,7 @@ import { MicroStepsTracker, MicroStep } from './microStep';
 import { BottleneckRadarView } from './bottleneck';
 import { WhyFirstDecisionCopilot } from './decisionCopilot';
 import { BehavioralAnalyticsView } from './behavioral';
+import { AgentSwarmDashboard } from './agentSwarm';
 
 // Shared Shell Components
 import { Header } from './components/Header';
@@ -425,6 +426,10 @@ export default function App() {
 
           {activeTab === 'academic' && (
             <AcademicResearchView />
+          )}
+
+          {activeTab === 'agent_activity' && (
+            <AgentSwarmDashboard />
           )}
         </main>
       </div>

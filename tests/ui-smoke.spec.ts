@@ -110,4 +110,18 @@ test.describe('SymFlowAge UI smoke tests', () => {
 
     await expect(page.getByText('Viết test auth cơ bản', { exact: true })).toBeVisible();
   });
+
+  test('opens agent activity and shows cycle progress', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Điều hướng: Theo Dõi Agent', exact: true }).click();
+
+    await expect(page.getByText(/Tầng Điều Phối & Rào Chắn Tác Tử AI/i)).toBeVisible();
+    await expect(page.getByText(/Event Log Thời Gian Thực/i)).toBeVisible();
+
+    await page.getByPlaceholder(/Xây dựng Module OAuth Google/i).fill('Kiểm chứng tiến trình Agent');
+    await page.getByRole('button', { name: /Kích Hoạt Đội Quân AI/i }).click();
+
+    await page.getByRole('button', { name: /Event Log Thời Gian Thực/i }).click();
+    await expect(page.getByText(/Khởi tạo quy trình phân rã mục tiêu/i)).toBeVisible();
+  });
 });

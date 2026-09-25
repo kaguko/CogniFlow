@@ -13,6 +13,26 @@ test.describe('MCP SSE transport', () => {
     expect(await response.json()).toEqual({ error: 'invalid_agent_credentials' });
   });
 
+  test('advertises the complete self-improvement tool contract', async ({ request }) => {
+    const response = await request.post('/api/mcp', {
+      headers: mcpHeaders,
+      data: { jsonrpc: '2.0', id: 1, method: 'tools/list' },
+    });
+    const body = await response.json();
+    const names = body.result.tools.map((tool: { name: string }) => tool.name);
+
+    expect(response.ok()).toBe(true);
+    expect(names).toEqual(expect.arrayContaining([
+      'symflowage_decompose_task',
+      'symflowage_guardrail_drift_check',
+      'symflowage_report_outcome',
+      'symflowage_record_outcome',
+      'symflowage_get_accuracy_score',
+      'symflowage_configure_circuit_breaker',
+      'symflowage_subscribe_alerts',
+    ]));
+  });
+
   test('opens an authenticated SSE session and publishes its message endpoint', async () => {
     const controller = new AbortController();
     const response = await fetch(`${baseUrl}/api/mcp/sse`, {

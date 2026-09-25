@@ -914,6 +914,61 @@ export function mountMcpRoutes(app: any) {
                   required: ['originalGoal', 'agentOutput'],
                 },
               },
+              {
+                name: 'symflowage_report_outcome',
+                description: 'Records execution outcomes for feedback and calibration memory.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    requestId: { type: 'string' },
+                    predictionId: { type: 'string' },
+                    outcomeStatus: { type: 'string', enum: ['SUCCESS', 'DRIFT', 'CRASH', 'ABANDONED'] },
+                    isFalsePositiveDrift: { type: 'boolean' },
+                    notes: { type: 'string' },
+                  },
+                  required: ['outcomeStatus'],
+                },
+              },
+              {
+                name: 'symflowage_record_outcome',
+                description: 'Records an optimal, drift, or bottleneck execution path.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    predictionId: { type: 'string' },
+                    actualPath: { type: 'string', enum: ['optimal', 'drift', 'bottleneck', 'crash'] },
+                    actualDriftScore: { type: 'number' },
+                    notes: { type: 'string' },
+                  },
+                  required: ['actualPath'],
+                },
+              },
+              {
+                name: 'symflowage_get_accuracy_score',
+                description: 'Retrieves backtesting accuracy and calibration metrics.',
+                inputSchema: {
+                  type: 'object',
+                  properties: { evaluationWindowDays: { type: 'number' } },
+                },
+              },
+              {
+                name: 'symflowage_configure_circuit_breaker',
+                description: 'Configures drift thresholds and circuit breaker behavior.',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    maxDriftThreshold: { type: 'number' },
+                    enableWebhook: { type: 'boolean' },
+                    webhookUrl: { type: 'string' },
+                    consecutiveFailureThreshold: { type: 'number' },
+                  },
+                },
+              },
+              {
+                name: 'symflowage_subscribe_alerts',
+                description: 'Subscribes the agent to circuit breaker alerts.',
+                inputSchema: { type: 'object', properties: {} },
+              },
             ],
           },
           id: jsonRpcRequest.id ?? 1,

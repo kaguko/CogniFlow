@@ -14,6 +14,7 @@ import {
   Database,
   Zap,
   GraduationCap,
+  Bot,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -103,10 +104,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
       badge: 'Luận văn',
       description: 'Dàn ý 5 chương, RQs & Literature',
     },
+    {
+      id: 'agent_activity',
+      label: 'Theo Dõi Agent',
+      icon: Bot,
+      badge: 'M2M',
+      description: 'Trạng thái, tiến độ & Event Log',
+    },
   ];
 
   return (
-    <aside className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between shrink-0 min-h-[calc(100vh-57px)]">
+    <aside className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col justify-between shrink-0 min-h-[calc(100vh-57px)] overflow-y-auto">
       {/* Navigation Links */}
       <div className="p-4 space-y-6">
         <div>
@@ -121,6 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
+                  aria-label={`Điều hướng: ${item.label}`}
                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded text-left transition-colors group ${
                     isActive
                       ? 'bg-indigo-950/70 text-indigo-300 font-medium border border-indigo-800/60'
