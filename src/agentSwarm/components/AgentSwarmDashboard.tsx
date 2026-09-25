@@ -28,6 +28,53 @@ export function AgentSwarmDashboard() {
   const [selectedSnippetIdx, setSelectedSnippetIdx] = useState(0);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
+  // Interactive Webhook / Circuit Breaker State Configuration
+  const [driftThreshold, setDriftThreshold] = useState(40);
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [consecutiveFailures, setConsecutiveFailures] = useState(3);
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [configMessage, setConfigMessage] = useState('');
+
+  React.useEffect(() => {
+    fetch('/api/circuit-breaker/config')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          setDriftThreshold(data.maxDriftThreshold ?? 40);
+          setWebhookUrl(data.webhookUrl ?? '');
+          setConsecutiveFailures(data.consecutiveFailureThreshold ?? 3);
+        }
+      })
+      .catch((err) => console.warn('Failed to load CB config', err));
+  }, []);
+
+  const handleSaveCBConfig = async () => {
+    setIsSavingConfig(true);
+    setConfigMessage('');
+    try {
+      const res = await fetch('/api/circuit-breaker/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maxDriftThreshold: Number(driftThreshold),
+          webhookUrl,
+          consecutiveFailureThreshold: Number(consecutiveFailures),
+          enableWebhook: webhookUrl.trim() !== '',
+        }),
+      });
+      if (res.ok) {
+        setConfigMessage('✅ Đã cập nhật rào chắn & Webhook thành công!');
+        setTimeout(() => setConfigMessage(''), 3000);
+      } else {
+        setConfigMessage('❌ Lưu cấu hình thất bại.');
+      }
+    } catch (err) {
+      setConfigMessage('❌ Lỗi kết nối mạng.');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
+
   // Compute dynamic lifecycle phase for Status Pulse LED
   const currentLifecyclePhase: LifecyclePhase = swarmState.circuitBreaker.isTriggered
     ? 'HALT_EXECUTION'
@@ -299,6 +346,131 @@ export function AgentSwarmDashboard() {
       {/* SUB-TAB 1: Swarm Mesh Visualization */}
       {activeSubTab === 'mesh' && (
         <div className="space-y-6">
+          {/* Real-time Multi-Agent Specialized Handoff Flow Panel */}
+          <div className="p-5 rounded-xl border border-indigo-900/40 bg-slate-900/60 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500"></span>
+                </span>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  Sơ Đồ Bàn Giao Tác Vụ Động (Multi-Agent Live Handoff Pipeline)
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
+                {isRunningSimulation ? 'Mô phỏng đang chạy' : 'Sẵn sàng'}
+              </span>
+            </div>
+
+            <div className="flex flex-col lg:flex-row items-center justify-between gap-4 text-xs">
+              {/* Node 1: PM Orchestrator */}
+              <div className={`flex-1 w-full p-3 rounded-lg border transition-all duration-300 ${
+                isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_pm')?.status === 'thinking'
+                  ? 'border-indigo-500 bg-indigo-950/20 shadow-lg shadow-indigo-500/10 scale-102 font-semibold'
+                  : 'border-slate-800 bg-slate-950/60'
+              }`}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-lg">🎯</span>
+                  <span className="text-slate-200">1. PM Orchestrator</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Phân rã mục tiêu thành 5-15m micro-steps.
+                </p>
+                {isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_pm')?.status === 'thinking' && (
+                  <div className="text-[10px] text-indigo-400 mt-2 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping"></span>
+                    Đang xử lý decompose...
+                  </div>
+                )}
+              </div>
+
+              {/* Arrow 1 */}
+              <div className="hidden lg:flex items-center text-slate-700">
+                <svg className="w-5 h-5 animate-pulse text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </div>
+
+              {/* Node 2: Coder Executor */}
+              <div className={`flex-1 w-full p-3 rounded-lg border transition-all duration-300 ${
+                isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_coder')?.status === 'executing'
+                  ? 'border-amber-500 bg-amber-950/20 shadow-lg shadow-amber-500/10 scale-102 font-semibold'
+                  : 'border-slate-800 bg-slate-950/60'
+              }`}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-lg">⚡</span>
+                  <span className="text-slate-200">2. Coder Executor</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Triển khai viết mã nguồn cho vi bước được chọn.
+                </p>
+                {isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_coder')?.status === 'executing' && (
+                  <div className="text-[10px] text-amber-400 mt-2 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                    Đang gõ code...
+                  </div>
+                )}
+              </div>
+
+              {/* Arrow 2 */}
+              <div className="hidden lg:flex items-center text-slate-700">
+                <svg className="w-5 h-5 animate-pulse text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </div>
+
+              {/* Node 3: Socratic Guardrail */}
+              <div className={`flex-1 w-full p-3 rounded-lg border transition-all duration-300 ${
+                isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_guardrail')?.status === 'executing'
+                  ? 'border-emerald-500 bg-emerald-950/20 shadow-lg shadow-emerald-500/10 scale-102 font-semibold'
+                  : 'border-slate-800 bg-slate-950/60'
+              }`}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-lg">🛡️</span>
+                  <span className="text-slate-200">3. Socratic Guardrail</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Quét Drift Score, ngắt mạch nếu có bẫy sa đà.
+                </p>
+                {isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_guardrail')?.status === 'executing' && (
+                  <div className="text-[10px] text-emerald-400 mt-2 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                    Đang phân tích drift...
+                  </div>
+                )}
+              </div>
+
+              {/* Arrow 3 */}
+              <div className="hidden lg:flex items-center text-slate-700">
+                <svg className="w-5 h-5 animate-pulse text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
+              </div>
+
+              {/* Node 4: QA Verifier */}
+              <div className={`flex-1 w-full p-3 rounded-lg border transition-all duration-300 ${
+                isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_qa')?.status === 'executing'
+                  ? 'border-indigo-500 bg-indigo-950/20 shadow-lg shadow-indigo-500/10 scale-102 font-semibold'
+                  : 'border-slate-800 bg-slate-950/60'
+              }`}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-lg">🧪</span>
+                  <span className="text-slate-200">4. QA Verifier</span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Kiểm thử ranh giới, đồng bộ vector memory.
+                </p>
+                {isRunningSimulation && swarmState.agents.find(a => a.id === 'agent_qa')?.status === 'executing' && (
+                  <div className="text-[10px] text-indigo-400 mt-2 font-mono flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping"></span>
+                    Đang kiểm thử...
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {swarmState.agents.map((agent) => (
               <div
@@ -464,27 +636,86 @@ export function AgentSwarmDashboard() {
 
             {/* Threshold Settings */}
             <div className="p-6 rounded-xl border border-slate-800 bg-slate-900 space-y-4">
-              <h3 className="text-base font-bold text-white">⚙️ Cấu Hình Rào Chắn M2M</h3>
+              <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <span>⚙️</span> Cấu Hình Rào Chắn M2M
+              </h3>
               
-              <div className="space-y-3 text-xs">
+              <div className="space-y-4 text-xs">
                 <div>
-                  <div className="flex justify-between text-slate-300 mb-1">
+                  <div className="flex justify-between text-slate-300 mb-1 font-medium">
                     <span>Ngưỡng Ngắt Mạch (Drift Threshold)</span>
-                    <span className="font-mono text-indigo-400 font-bold">40%</span>
+                    <span className="font-mono text-indigo-400 font-bold">{driftThreshold}%</span>
                   </div>
-                  <input type="range" min="20" max="80" value="40" readOnly className="w-full accent-indigo-500" />
+                  <input
+                    type="range"
+                    min="20"
+                    max="80"
+                    step="5"
+                    value={driftThreshold}
+                    onChange={(e) => setDriftThreshold(Number(e.target.value))}
+                    className="w-full accent-indigo-500 cursor-pointer"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Nếu Drift Score của Agent vượt quá ngưỡng này, toàn bộ dòng lệnh sẽ bị HALT lập tức.
+                  </p>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-slate-300">
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">
+                    Số lần Lỗi / BLOCK Liên Tiếp:
+                  </label>
+                  <select
+                    value={consecutiveFailures}
+                    onChange={(e) => setConsecutiveFailures(Number(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-indigo-500"
+                  >
+                    <option value={1}>1 lần lỗi</option>
+                    <option value={2}>2 lần liên tiếp</option>
+                    <option value={3}>3 lần liên tiếp (Khuyên dùng)</option>
+                    <option value={5}>5 lần liên tiếp</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-medium mb-1">
+                    Outbound Webhook URL (Slack/Discord):
+                  </label>
+                  <input
+                    type="text"
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    placeholder="https://hooks.slack.com/services/..."
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-slate-300 placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono text-[11px]"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    Sự kiện `HALT_EXECUTION` sẽ được gửi trực tiếp tới URL này dưới dạng HTTP POST JSON.
+                  </p>
+                </div>
+
+                {configMessage && (
+                  <div className="p-2.5 rounded bg-slate-950 text-indigo-300 font-semibold text-center border border-indigo-950/60 animate-in fade-in duration-200">
+                    {configMessage}
+                  </div>
+                )}
+
+                <button
+                  onClick={handleSaveCBConfig}
+                  disabled={isSavingConfig}
+                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-semibold rounded transition-colors shadow-lg shadow-indigo-600/20"
+                >
+                  {isSavingConfig ? 'Đang cập nhật...' : '💾 Lưu cấu hình rào chắn'}
+                </button>
+
+                <div className="pt-2 border-t border-slate-800/80 space-y-1.5 text-slate-400">
+                  <div className="flex items-center justify-between">
                     <span>Tự Động Reset Context:</span>
                     <span className="text-emerald-400 font-semibold font-mono">BẬT (ON)</span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-300">
+                  <div className="flex items-center justify-between">
                     <span>Yêu Cầu Human Approval:</span>
                     <span className="text-indigo-400 font-semibold font-mono">KHI DRIFT &gt; 50%</span>
                   </div>
-                  <div className="flex items-center justify-between text-slate-300">
+                  <div className="flex items-center justify-between">
                     <span>Bộ Nhớ Vector RAG:</span>
                     <span className="text-emerald-400 font-semibold font-mono">pgvector Active</span>
                   </div>

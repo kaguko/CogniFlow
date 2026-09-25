@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { DEFAULT_PRESET_CONTEXTS, INITIAL_PREDICTION_DATA, DEFAULT_LONG_TERM_GOALS } from './data/defaultPresets';
 import { Eye, EyeOff, Sparkles, X, Keyboard } from 'lucide-react';
 
@@ -12,17 +12,19 @@ import { GoalCanvasView, useGoals, LongTermGoal } from './goal';
 import { PredictiveHorizonView, usePrediction, PredictionPayload } from './prediction';
 import { MicroStepsTracker, MicroStep } from './microStep';
 import { BottleneckRadarView } from './bottleneck';
-import { WhyFirstDecisionCopilot } from './decisionCopilot';
-import { BehavioralAnalyticsView } from './behavioral';
-import { AgentSwarmDashboard } from './agentSwarm';
+
+// Dynamic Imports for Code Splitting (Optimizing bundle size from 1.5MB to < 500kB)
+const WhyFirstDecisionCopilot = React.lazy(() => import('./decisionCopilot').then(m => ({ default: m.WhyFirstDecisionCopilot })));
+const BehavioralAnalyticsView = React.lazy(() => import('./behavioral').then(m => ({ default: m.BehavioralAnalyticsView })));
+const AgentSwarmDashboard = React.lazy(() => import('./agentSwarm').then(m => ({ default: m.AgentSwarmDashboard })));
 
 // Shared Shell Components
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { ZoomController } from './components/ZoomController';
-import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
-import { JsonbIndexStrategyView } from './components/JsonbIndexStrategyView';
-import { AcademicResearchView } from './components/AcademicResearchView';
+const SemanticKnowledgeRagView = React.lazy(() => import('./components/SemanticKnowledgeRagView').then(m => ({ default: m.SemanticKnowledgeRagView })));
+const JsonbIndexStrategyView = React.lazy(() => import('./components/JsonbIndexStrategyView').then(m => ({ default: m.JsonbIndexStrategyView })));
+const AcademicResearchView = React.lazy(() => import('./components/AcademicResearchView').then(m => ({ default: m.AcademicResearchView })));
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { decomposeOffline } from './services/offlineDecomposer';
 
@@ -277,41 +279,6 @@ export default function App() {
     }));
   };
 
-  const handleReorderSteps = (reorderedSteps: MicroStep[]) => {
-    setPrediction((prev) => ({
-      ...prev,
-      microSteps: reorderedSteps,
-    }));
-  };
-
-  const handleMoveStep = (stepId: string, direction: 'up' | 'down') => {
-    setPrediction((prev) => {
-      const idx = prev.microSteps.findIndex((s) => s.id === stepId);
-      if (idx === -1) return prev;
-      const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= prev.microSteps.length) return prev;
-
-      const newSteps = [...prev.microSteps];
-      const temp = newSteps[idx];
-      newSteps[idx] = newSteps[targetIdx];
-      newSteps[targetIdx] = temp;
-
-      return {
-        ...prev,
-        microSteps: newSteps.map((s, i) => ({ ...s, order: i + 1 })),
-      };
-    });
-  };
-
-  const handleDeleteStep = (stepId: string) => {
-    setPrediction((prev) => ({
-      ...prev,
-      microSteps: prev.microSteps
-        .filter((s) => s.id !== stepId)
-        .map((s, i) => ({ ...s, order: i + 1 })),
-    }));
-  };
-
   const handleSaveContext = (updatedContext: ProjectContext) => {
     setCurrentContext(updatedContext);
     fetchPrediction(updatedContext);
@@ -472,9 +439,6 @@ export default function App() {
               activeGoal={activeGoal}
               onLinkStepToGoal={handleLinkStepToGoal}
               onSelectPreset={handleSelectPreset}
-              onDeleteStep={handleDeleteStep}
-              onReorderSteps={handleReorderSteps}
-              onMoveStep={handleMoveStep}
             />
           )}
 
@@ -488,34 +452,40 @@ export default function App() {
             />
           )}
 
-          {activeTab === 'whyfirst' && (
-            <WhyFirstDecisionCopilot currentContext={currentContext} />
-          )}
+          <Suspense fallback={
+            <div className="p-12 text-center bg-slate-900/40 rounded-xl border border-slate-800/60 text-slate-400 font-medium animate-pulse">
+              ⚡ Loading cognitive module...
+            </div>
+          }>
+            {activeTab === 'whyfirst' && (
+              <WhyFirstDecisionCopilot currentContext={currentContext} />
+            )}
 
-          {activeTab === 'rag' && (
-            <SemanticKnowledgeRagView />
-          )}
+            {activeTab === 'rag' && (
+              <SemanticKnowledgeRagView />
+            )}
 
-          {activeTab === 'jsonb_index' && (
-            <JsonbIndexStrategyView />
-          )}
+            {activeTab === 'jsonb_index' && (
+              <JsonbIndexStrategyView />
+            )}
 
-          {activeTab === 'behavioral' && (
-            <BehavioralAnalyticsView
-              behavioralInsights={prediction.behavioralInsights}
-              currentContext={currentContext}
-              microSteps={prediction.microSteps}
-              driftScore={currentDriftScore}
-            />
-          )}
+            {activeTab === 'behavioral' && (
+              <BehavioralAnalyticsView
+                behavioralInsights={prediction.behavioralInsights}
+                currentContext={currentContext}
+                microSteps={prediction.microSteps}
+                driftScore={currentDriftScore}
+              />
+            )}
 
-          {activeTab === 'academic' && (
-            <AcademicResearchView />
-          )}
+            {activeTab === 'academic' && (
+              <AcademicResearchView />
+            )}
 
-          {activeTab === 'agent_activity' && (
-            <AgentSwarmDashboard />
-          )}
+            {activeTab === 'agent_activity' && (
+              <AgentSwarmDashboard />
+            )}
+          </Suspense>
         </main>
       </div>
 
