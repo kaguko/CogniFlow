@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { LongTermGoal } from '../entities/longTermGoal';
 import { MicroStep } from '../../microStep/entities/microStep';
-import { offlineDb } from '../../services/indexedDbService';
 
 export interface UseGoalsProps {
   initialGoals: LongTermGoal[];
@@ -17,33 +16,35 @@ export function useGoals({
   const [goals, setGoals] = useState<LongTermGoal[]>(initialGoals);
   const [activeGoalId, setActiveGoalId] = useState<string>(initialGoals[0]?.id || '');
 
-  // Restore stored goals from IndexedDB
+  // Restore stored goals from localStorage
   useEffect(() => {
-    let isMounted = true;
-    offlineDb.getItem<any>('domain_stores', 'long_term_goals').then((stored) => {
-      if (isMounted && stored && Array.isArray(stored.data) && stored.data.length > 0) {
-        setGoals(stored.data);
-        if (stored.activeGoalId) {
-          setActiveGoalId(stored.activeGoalId);
+    try {
+      const stored = localStorage.getItem('domain_stores_long_term_goals');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && Array.isArray(parsed.data) && parsed.data.length > 0) {
+          setGoals(parsed.data);
+          if (parsed.activeGoalId) {
+            setActiveGoalId(parsed.activeGoalId);
+          }
         }
       }
-    }).catch((err) => {
-      console.warn('[useGoals] Failed reading from IndexedDB:', err);
-    });
-    return () => {
-      isMounted = false;
-    };
+    } catch (err) {
+      console.warn('[useGoals] Failed reading from localStorage:', err);
+    }
   }, []);
 
-  // Save goals to IndexedDB
+  // Save goals to localStorage
   useEffect(() => {
     if (goals.length > 0) {
-      offlineDb.setItem('domain_stores', {
-        id: 'long_term_goals',
-        data: goals,
-        activeGoalId,
-        updatedAt: Date.now(),
-      }).catch((e) => console.warn('[useGoals] Failed saving to IndexedDB:', e));
+      try {
+        localStorage.setItem('domain_stores_long_term_goals', JSON.stringify({
+          data: goals,
+          activeGoalId,
+        }));
+      } catch (e) {
+        console.warn('[useGoals] Failed saving to localStorage:', e);
+      }
     }
   }, [goals, activeGoalId]);
 
