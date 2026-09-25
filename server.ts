@@ -32,6 +32,7 @@ import {
 import { rateLimiter, smartCache, classifyTaskComplexity, MODEL_TIERS } from './src/utils/smartCacheRateLimitEngine.ts';
 import { mountMcpRoutes } from './src/mcp/mcpServer.ts';
 import { openapiSpec } from './src/openapi/openapiSpec.ts';
+import { addCalibrationRule, getActiveCalibrationRules } from './src/lib/calibrationMemory.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -232,15 +233,20 @@ function addSemanticGuardrailMetadata(result: any, threshold = 40) {
 }
 
 async function generateAgentDecomposition(goalTitle: string, technicalContext: unknown) {
+  const calibrationRules = getActiveCalibrationRules();
+  const calibrationContext = calibrationRules.length > 0
+    ? `\nActive Calibration Rules:\n${calibrationRules.map((rule, index) => `${index + 1}. ${rule.rule}`).join('\n')}`
+    : '';
+
   if (!ai) return buildSmartFallbackDecompositionSteps(goalTitle);
 
   try {
     const response = await generateContentWithFallback(ai, {
-      contents: `Phân rã mục tiêu của AI Agent thành 3-5 vi bước lập trình 5-15 phút.\nMục tiêu: ${goalTitle}\nNgữ cảnh kỹ thuật: ${JSON.stringify(technicalContext || {})}`,
+      contents: `Phân rã mục tiêu của AI Agent thành 3-5 vi bước lập trình 5-15 phút.\nMục tiêu: ${goalTitle}\nNgữ cảnh kỹ thuật: ${JSON.stringify(technicalContext || {})}${calibrationContext}`,
       taskComplexity: 'simple',
       config: {
         systemInstruction:
-          'Trả về JSON thuần với taskTitle, microSteps và leanAdvice. Mỗi microStep phải có title, durationMinutes <= 15, singleAction, testCriterion, programmerPrinciple và unblockTip.',
+          'Trả về JSON thuần với taskTitle, microSteps và leanAdvice. Mỗi microStep phải có title, durationMinutes <= 15, singleAction, testCriterion, programmerPrinciple và unblockTip. Tuân thủ Active Calibration Rules khi lập kế hoạch.',
         responseMimeType: 'application/json',
         temperature: 0.2,
       },
@@ -309,6 +315,7 @@ app.post(
       requestId,
       agentId: req.agentId,
       goalTitle,
+      activeCalibrationRules: getActiveCalibrationRules(),
       ...result,
     });
   }
@@ -720,6 +727,10 @@ const handleRecordOutcome = async (req: Request, res: Response) => {
       notes: notes || null,
     });
 
+    if (outcomeStatus === 'DRIFT' || outcomeStatus === 'CRASH') {
+      addCalibrationRule(outcomeStatus, requestId, notes);
+    }
+
     const backtest = await runBacktest({
       from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
       to: new Date(),
@@ -749,6 +760,10 @@ const handleRecordOutcome = async (req: Request, res: Response) => {
         sampleSize: backtest.sampleSize,
         driftHitRate: Math.round(backtest.driftHitRate * 100) / 100,
         crashHitRate: Math.round(backtest.crashHitRate * 100) / 100,
+      },
+      feedbackMemory: {
+        updated: outcomeStatus === 'DRIFT' || outcomeStatus === 'CRASH',
+        activeCalibrationRules: getActiveCalibrationRules(),
       },
     });
   } catch (error: any) {

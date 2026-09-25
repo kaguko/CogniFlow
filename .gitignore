@@ -12,6 +12,7 @@ secrets.json
 *.secrets.json
 /secrets/
 /keys/
+.data/
 
 # Firebase configuration & secrets
 firebase-applet-config.json

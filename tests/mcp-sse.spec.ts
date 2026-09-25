@@ -78,4 +78,56 @@ test.describe('MCP SSE transport', () => {
     await reader.cancel();
     controller.abort();
   });
+
+  test('feeds MCP outcome feedback into the next MCP decomposition', async ({ request }) => {
+    const outcomeResponse = await request.post('/api/mcp', {
+      headers: mcpHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'tools/call',
+        params: {
+          name: 'symflowage_report_outcome',
+          arguments: {
+            requestId: `mcp-self-improvement-${Date.now()}`,
+            outcomeStatus: 'DRIFT',
+            actualDriftScore: 60,
+            notes: 'MCP phải chạy test contract trước khi mở rộng kiến trúc.',
+          },
+        },
+      },
+    });
+    const outcome = await outcomeResponse.json();
+    const outcomeText = JSON.parse(outcome.result.content[0].text);
+
+    const decompositionResponse = await request.post('/api/mcp', {
+      headers: mcpHeaders,
+      data: {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'symflowage_decompose_task',
+          arguments: {
+            taskTitle: 'Cải thiện vòng lặp MCP',
+            goalTitle: 'Tự cải thiện SymFlowAge',
+          },
+        },
+      },
+    });
+    const decomposition = await decompositionResponse.json();
+    const decompositionText = JSON.parse(decomposition.result.content[0].text);
+
+    expect(outcomeResponse.ok()).toBe(true);
+    expect(outcomeText.feedbackMemory.updated).toBe(true);
+    expect(decompositionResponse.ok()).toBe(true);
+    expect(decompositionText.activeCalibrationRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceOutcome: 'DRIFT',
+          rule: expect.stringContaining('MCP phải chạy test contract'),
+        }),
+      ])
+    );
+  });
 });

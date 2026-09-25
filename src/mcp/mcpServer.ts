@@ -23,6 +23,7 @@ import {
   registerSseAlertSubscriber,
 } from '../lib/circuitBreaker.ts';
 import { requireAgentAuth } from '../middleware/agentAuth.ts';
+import { addCalibrationRule, getActiveCalibrationRules } from '../lib/calibrationMemory.ts';
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -300,6 +301,10 @@ export function createSymFlowAgeMcpServer() {
         const taskTitle = String(args.taskTitle || '').trim();
         const goalTitle = String(args.goalTitle || taskTitle).trim();
         const techCtx = String(args.technicalContext || '').trim();
+        const calibrationRules = getActiveCalibrationRules();
+        const calibrationContext = calibrationRules.length > 0
+          ? ` Active Calibration Rules: ${calibrationRules.map((rule, index) => `${index + 1}. ${rule.rule}`).join(' ')}`
+          : '';
 
         if (!taskTitle) {
           throw new Error('taskTitle argument is required');
@@ -312,6 +317,7 @@ Mỗi vi bước phải:
 1. Có thời lượng ngắn (<= 15 phút).
 2. Tự hoàn chỉnh và kiểm thử được độc lập (Atomic & Testable).
 3. Tuân thủ Divide & Conquer, Atomic Commit, Fail Fast.
+4. Tuân thủ mọi Active Calibration Rules được cung cấp.
 
 Bắt buộc trả về đúng định dạng JSON:
 {
@@ -330,7 +336,7 @@ Bắt buộc trả về đúng định dạng JSON:
 `;
           const prompt = `Phân rã tác vụ: "${taskTitle}" trong bối cảnh mục tiêu "${goalTitle}".${
             techCtx ? ` Ngữ cảnh công nghệ: ${techCtx}` : ''
-          }`;
+          }${calibrationContext}`;
 
           try {
             const response = await generateContentWithFallback(ai, {
@@ -364,6 +370,7 @@ Bắt buộc trả về đúng định dạng JSON:
                     taskTitle,
                     goalTitle,
                     engine: 'Local Rule Engine (Offline)',
+                    activeCalibrationRules: calibrationRules,
                     microSteps: localPayload.microSteps || [],
                   },
                   null,
@@ -692,6 +699,10 @@ Bắt buộc trả về đúng JSON:
           minAgeHours: 0,
         });
 
+        if (actualPath === 'drift' || actualPath === 'bottleneck') {
+          addCalibrationRule(actualPath === 'drift' ? 'DRIFT' : 'CRASH', requestId, String(args.notes || ''));
+        }
+
         const response = {
           contractVersion: '1.0',
           status: 'RECORDED',
@@ -708,6 +719,10 @@ Bắt buộc trả về đúng JSON:
             sampleSize: backtest.sampleSize,
             driftHitRate: Math.round(backtest.driftHitRate * 100) / 100,
             crashHitRate: Math.round(backtest.crashHitRate * 100) / 100,
+          },
+          feedbackMemory: {
+            updated: actualPath === 'drift' || actualPath === 'bottleneck',
+            activeCalibrationRules: getActiveCalibrationRules(),
           },
         };
 

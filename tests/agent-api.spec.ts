@@ -48,6 +48,36 @@ test.describe('Versioned Agent API', () => {
     expect(body.driftScore).toBeGreaterThanOrEqual(40);
   });
 
+  test('feeds drift outcomes into the next decomposition context', async ({ request }) => {
+    const outcomeResponse = await request.post('/api/v1/agent/outcomes', {
+      headers: agentHeaders,
+      data: {
+        requestId: `self-improvement-${Date.now()}`,
+        outcomeStatus: 'DRIFT',
+        actualDriftScore: 60,
+        notes: 'Không mở rộng kiến trúc trước khi test contract hiện tại chạy xanh.',
+      },
+    });
+    const outcome = await outcomeResponse.json();
+
+    const decompositionResponse = await request.post('/api/v1/agent/decompose', {
+      headers: agentHeaders,
+      data: { goalTitle: 'Cải thiện vòng lặp MCP self-improvement' },
+    });
+    const decomposition = await decompositionResponse.json();
+
+    expect(outcomeResponse.status()).toBe(201);
+    expect(outcome.feedbackMemory.updated).toBe(true);
+    expect(decomposition.activeCalibrationRules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceOutcome: 'DRIFT',
+          rule: expect.stringContaining('Không mở rộng kiến trúc'),
+        }),
+      ])
+    );
+  });
+
   test('returns a Socratic architecture critique contract', async ({ request }) => {
     const response = await request.post('/api/v1/agent/socratic-decision', {
       headers: { ...agentHeaders, 'x-agent-id': 'architect-agent' },
