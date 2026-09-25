@@ -13,6 +13,7 @@ import {
   Target,
   Database,
   Zap,
+  GraduationCap,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -94,6 +95,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Phân Tích Hành Vi',
       icon: Activity,
       description: 'Vận tốc & ma sát nhận thức',
+    },
+    {
+      id: 'academic',
+      label: 'Khung Nghiên Cứu Học Thuật',
+      icon: GraduationCap,
+      badge: 'Luận văn',
+      description: 'Dàn ý 5 chương, RQs & Literature',
     },
   ];
 

@@ -21,6 +21,7 @@ import { Sidebar } from './components/Sidebar';
 import { ZoomController } from './components/ZoomController';
 import { SemanticKnowledgeRagView } from './components/SemanticKnowledgeRagView';
 import { JsonbIndexStrategyView } from './components/JsonbIndexStrategyView';
+import { AcademicResearchView } from './components/AcademicResearchView';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { decomposeOffline } from './services/offlineDecomposer';
 
@@ -420,6 +421,10 @@ export default function App() {
               microSteps={prediction.microSteps}
               driftScore={currentDriftScore}
             />
+          )}
+
+          {activeTab === 'academic' && (
+            <AcademicResearchView />
           )}
         </main>
       </div>
