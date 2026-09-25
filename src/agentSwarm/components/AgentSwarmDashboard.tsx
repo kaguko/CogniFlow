@@ -7,6 +7,7 @@ import { DriftScoreMeterAndSparkline } from './DriftScoreMeterAndSparkline';
 import { RabbitHoleCalloutAndFalsePositive } from './RabbitHoleCalloutAndFalsePositive';
 import { EffortSyncAndLifecyclePulse, LifecyclePhase } from './EffortSyncAndLifecyclePulse';
 import { PredictiveHorizonTrajectories } from './PredictiveHorizonTrajectories';
+import { HeavyAgentArchitectureView } from './HeavyAgentArchitectureView';
 
 export function AgentSwarmDashboard() {
   const {
@@ -20,7 +21,7 @@ export function AgentSwarmDashboard() {
   } = useAgentSwarm();
 
   const [activeSubTab, setActiveSubTab] = useState<
-    'mesh' | 'tree_map' | 'drift_risk' | 'guardrails' | 'trajectories' | 'logs' | 'memory' | 'm2m_api'
+    'mesh' | 'tree_map' | 'drift_risk' | 'guardrails' | 'trajectories' | 'logs' | 'memory' | 'm2m_api' | 'heavy_agent'
   >('mesh');
   const [swarmGoalInput, setSwarmGoalInput] = useState(swarmState.objective);
   const [newKeyName, setNewKeyName] = useState('');
@@ -282,6 +283,16 @@ export function AgentSwarmDashboard() {
           }`}
         >
           <span>🔑</span> M2M Gateway
+        </button>
+        <button
+          onClick={() => setActiveSubTab('heavy_agent')}
+          className={`px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors flex items-center gap-2 whitespace-nowrap ${
+            activeSubTab === 'heavy_agent'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+          }`}
+        >
+          <span>⚡</span> Heavy Agent (Async & Multi-Tier)
         </button>
       </div>
 
@@ -662,6 +673,11 @@ export function AgentSwarmDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* SUB-TAB 6: Heavy / High-Frequency Agent Architecture */}
+      {activeSubTab === 'heavy_agent' && (
+        <HeavyAgentArchitectureView />
       )}
     </div>
   );

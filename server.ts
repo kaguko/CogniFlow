@@ -34,6 +34,8 @@ import { rateLimiter, smartCache, classifyTaskComplexity, MODEL_TIERS } from './
 import { mountMcpRoutes } from './src/mcp/mcpServer.ts';
 import { openapiSpec } from './src/openapi/openapiSpec.ts';
 import { addCalibrationRule, getActiveCalibrationRules } from './src/lib/calibrationMemory.ts';
+import { heavyAgentRouter } from './src/agentSwarm/heavyAgent/heavyAgentRoutes.ts';
+import { globalAgentWebSocketServer } from './src/agentSwarm/heavyAgent/websocketAgentStream.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,6 +44,9 @@ const app = express();
 const PORT = serverConfig.port;
 
 app.use(express.json({ limit: '10mb' }));
+
+// Heavy / High-Frequency Agent Engine: Async Queues, Multi-Tiered Cache, and WebSocket Duplex
+app.use('/api/v1/agent/async', heavyAgentRouter);
 
 // Mount Model Context Protocol (MCP) Server endpoints (/api/mcp, /api/mcp/sse)
 mountMcpRoutes(app);
@@ -2216,6 +2221,9 @@ app.post('/api/rate-limit/test', createRateLimitMiddleware('ai_simple', 1), (req
 async function setupVite() {
   const isProduction = process.env.NODE_ENV === 'production';
   const httpServer = http.createServer(app);
+
+  // Initialize Persistent WebSocket Streaming Engine (/ws/agent/stream)
+  globalAgentWebSocketServer.initialize(httpServer);
 
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');

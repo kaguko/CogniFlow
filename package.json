@@ -16,7 +16,8 @@
     "backtest:local": "tsx scripts/run-backtest.ts",
     "test:load:k6-rampup": "k6 run tests/load/k6-rampup.js",
     "test:load:k6-spike": "k6 run tests/load/k6-spike.js",
-    "test:load:autocannon": "tsx scripts/run-autocannon.ts"
+    "test:load:autocannon": "tsx scripts/run-autocannon.ts",
+    "test:load:heavy-agent": "tsx scripts/run-heavy-agent-benchmark.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -37,7 +38,8 @@
     "react-hotkeys-hook": "^5.3.3",
     "react-is": "^19.3.0",
     "recharts": "^3.10.1",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
@@ -46,6 +48,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.1",
     "autocannon": "^8.0.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
