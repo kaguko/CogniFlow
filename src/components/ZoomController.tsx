@@ -67,7 +67,7 @@ export const ZoomController: React.FC<ZoomControllerProps> = ({
             <div className="flex items-center gap-2 text-xs bg-slate-950/90 border border-slate-800 rounded-lg px-2.5 py-1 min-w-0">
               <span className="text-slate-500 text-[11px] shrink-0">Mục tiêu:</span>
               <span className="font-medium text-slate-200 truncate max-w-[200px] sm:max-w-[280px]">
-                {activeGoalTitle}
+                🎯 {activeGoalTitle}
               </span>
               <span
                 className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${

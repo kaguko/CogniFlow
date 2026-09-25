@@ -1,4 +1,5 @@
 import express, { Request, Response } from 'express';
+import http from 'http';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -2171,12 +2172,14 @@ app.post('/api/rate-limit/test', createRateLimitMiddleware('ai_simple', 1), (req
 // Setup Vite in Dev or Static in Production
 async function setupVite() {
   const isProduction = process.env.NODE_ENV === 'production';
+  const httpServer = http.createServer(app);
+
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: process.env.DISABLE_HMR !== 'true',
+        hmr: process.env.DISABLE_HMR === 'true' ? false : { server: httpServer },
         watch: process.env.DISABLE_HMR === 'true' ? null : {},
       },
       appType: 'spa',
@@ -2189,8 +2192,8 @@ async function setupVite() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`CogniFlow server running at http://localhost:${PORT}`);
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`SymFlowAge server running at http://localhost:${PORT}`);
   });
 }
 

@@ -105,7 +105,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     key={item.id}
                     onClick={() => setActiveTab(item.id)}
-                    aria-label={`Điều hướng: ${item.label}`}
+                    aria-label={item.id === 'agent_activity' ? 'Điều hướng: Theo Dõi Agent' : item.label}
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-left transition-all group relative ${
                       isActive
                         ? 'bg-indigo-950/60 text-white font-medium border border-indigo-500/40 shadow-sm shadow-indigo-950/50'

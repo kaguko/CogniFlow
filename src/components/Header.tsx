@@ -155,7 +155,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenShortcutModal}
             className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 hover:border-indigo-500/50 text-slate-400 hover:text-indigo-300 transition-all flex items-center gap-1 text-xs"
-            title="Bảng phím tắt bàn phím (Shift + ?)"
+            title="Bảng phím tắt (Bấm Shift + ?)"
             aria-label="Mở phím tắt"
           >
             <Keyboard className="w-3.5 h-3.5 text-indigo-400" />
