@@ -1161,7 +1161,7 @@ export function mountMcpRoutes(app: any) {
     }
 
     try {
-      await transport.handlePostMessage(req, res);
+      await transport.handlePostMessage(req, res, req.body);
     } catch (err: any) {
       console.error('[MCP PostMessage Error]:', err?.message || err);
       return res.status(500).json({ error: 'Failed to process MCP message' });
