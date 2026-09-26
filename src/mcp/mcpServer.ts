@@ -24,6 +24,8 @@ import {
 } from '../lib/circuitBreaker.ts';
 import { requireAgentAuth } from '../middleware/agentAuth.ts';
 import { addCalibrationRule, getActiveCalibrationRules } from '../lib/calibrationMemory.ts';
+import { serverDriftFeedbackStore, getDriftCalibrationStats } from '../routes/driftFeedbackStore.ts';
+import { smartCache } from '../utils/smartCacheRateLimitEngine.ts';
 
 const apiKey = serverConfig.geminiApiKey;
 const ai = apiKey
@@ -168,7 +170,7 @@ export function createSymFlowAgeMcpServer() {
         {
           name: 'symflowage_guardrail_drift_check',
           description:
-            'Fast Machine-to-Machine guardrail check evaluating agent output against an original goal to return an ALLOW / WARN / BLOCK decision with drift score.',
+            'Fast Machine-to-Machine guardrail check evaluating agent output against an original goal to return an ALLOW / WARN / BLOCK decision with drift score, smart exemptions, and token-saving caching.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -182,10 +184,38 @@ export function createSymFlowAgeMcpServer() {
               },
               circuitBreakerThreshold: {
                 type: 'number',
-                description: 'Drift score threshold (1-100) to trigger BLOCK decision. Default: 40.',
+                description: 'Drift score threshold (1-100) to trigger BLOCK decision. Default: 65.',
+              },
+              userExemptions: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Optional list of verified task titles to exempt from rabbit-hole detection.',
               },
             },
             required: ['originalGoal', 'agentOutput'],
+          },
+        },
+        {
+          name: 'symflowage_report_false_positive',
+          description:
+            'Báo cáo "Đây KHÔNG phải Rabbit Hole" - lưu ngoại lệ vào Calibration Memory để hệ thống học và không bao giờ BLOCK nhầm các tác vụ lập trình thiết yếu nữa.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskTitle: {
+                type: 'string',
+                description: 'Tên tác vụ bị cảnh báo sai (ví dụ: "Fix login bug", "Cài đặt HTTPS")',
+              },
+              reason: {
+                type: 'string',
+                description: 'Lý do tác vụ này là hợp lệ và cần thiết cho mục tiêu dự án.',
+              },
+              coreGoalTitle: {
+                type: 'string',
+                description: 'Mục tiêu cốt lõi liên quan (ví dụ: "Ship MVP")',
+              },
+            },
+            required: ['taskTitle'],
           },
         },
         {
@@ -641,15 +671,52 @@ Bắt buộc trả về đúng JSON:
         const agentOutput = String(args.agentOutput || '').trim();
         const threshold = Number.isFinite(Number(args.circuitBreakerThreshold))
           ? Math.min(100, Math.max(1, Number(args.circuitBreakerThreshold)))
-          : 40;
+          : 65;
 
         if (!originalGoal || !agentOutput) {
           throw new Error('originalGoal and agentOutput are required');
         }
 
-        const semantic = buildSmartFallbackSemanticDrift(originalGoal, [
-          { id: 'agent-output', title: agentOutput },
-        ]);
+        const userExemptions = Array.isArray(args.userExemptions) ? args.userExemptions : [];
+        const allExemptions = [
+          ...serverDriftFeedbackStore.filter((f) => f.isFalsePositive).map((f) => ({
+            taskId: f.taskId,
+            taskTitle: f.taskTitle,
+            reason: f.userReason,
+          })),
+          ...userExemptions.map((e: any) =>
+            typeof e === 'string'
+              ? { taskTitle: e, reason: 'MCP user exemption' }
+              : { taskId: e?.taskId, taskTitle: e?.taskTitle || e?.title || '', reason: e?.reason || 'MCP user exemption' }
+          ),
+        ];
+
+        const cacheKey = `mcp_drift:${originalGoal.toLowerCase()}:${agentOutput.toLowerCase()}:${threshold}:ex_${allExemptions.length}`;
+        const cached = smartCache.get<any>(cacheKey);
+        if (cached.hit && cached.data) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ ...cached.data, cached: true }, null, 2) }],
+          };
+        }
+
+        const semantic = buildSmartFallbackSemanticDrift(
+          originalGoal,
+          [{ id: 'agent-output', title: agentOutput }],
+          allExemptions
+        );
+
+        const lowerOutput = agentOutput.toLowerCase();
+        const isExempted = allExemptions.some(
+          (e) => e.taskTitle && (lowerOutput.includes(e.taskTitle.toLowerCase()) || e.taskTitle.toLowerCase().includes(lowerOutput))
+        );
+
+        const coreDeliveryKeywords = [
+          'fix', 'bug', 'issue', 'login', 'auth', 'oauth', 'token', 'signup', 'api', 'route', 'endpoint',
+          'test', 'unit test', 'spec', 'build', 'ship', 'mvp', 'database', 'schema', 'migration', 'table',
+          'crud', 'checkout', 'payment', 'stripe', 'cart', 'order', 'profile', 'user', 'session', 'deploy',
+          'refactor', 'clean', 'lint', 'component', 'ui', 'form', 'validation', 'error', 'exception', 'cache'
+        ];
+        const isCoreDeliveryAction = coreDeliveryKeywords.some((kw) => lowerOutput.includes(kw));
 
         const getTokens = (str: string) =>
           new Set(
@@ -663,25 +730,76 @@ Bắt buộc trả về đúng JSON:
         const goalTokens = getTokens(originalGoal);
         const outputTokens = getTokens(agentOutput);
         const sharedTokens = [...goalTokens].filter((token) => outputTokens.has(token)).length;
-        const overlapDrift = goalTokens.size > 0 && sharedTokens === 0 ? 60 : 0;
-        const rabbitHoleDrift = semantic.detectedRabbitHoles.length > 0 ? 40 : 0;
-        const driftScore = Math.min(100, Math.max(0, Math.max(overlapDrift, rabbitHoleDrift)));
-        const status = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+
+        let driftScore = 0;
+        if (isExempted) {
+          driftScore = 0;
+        } else if (semantic.detectedRabbitHoles.length > 0) {
+          driftScore = 75;
+        } else if (sharedTokens > 0 || isCoreDeliveryAction) {
+          driftScore = 15;
+        } else {
+          driftScore = 50;
+        }
+
+        const status = driftScore >= threshold ? 'BLOCK' : driftScore >= 40 ? 'WARN' : 'ALLOW';
 
         const result = {
           mcpContract: 'symflowage.mcp.v1',
           originalGoal,
+          agentOutput,
           driftScore,
           threshold,
           status,
           decision: status,
+          isExempted,
           detectedRabbitHoles: semantic.detectedRabbitHoles,
+          calibrationStats: getDriftCalibrationStats(),
           reason:
             status === 'BLOCK'
               ? 'Agent output has insufficient goal overlap or contains a known rabbit-hole pattern.'
               : status === 'WARN'
               ? 'Agent output needs human review before execution.'
               : 'Agent output remains aligned with the original goal.',
+        };
+
+        smartCache.set(cacheKey, result, 'simple');
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        };
+      }
+
+      if (name === 'symflowage_report_false_positive') {
+        const taskTitle = String(args.taskTitle || '').trim();
+        const reason = String(args.reason || 'Flagged valid task via MCP tool').trim();
+        const coreGoalTitle = String(args.coreGoalTitle || '').trim() || undefined;
+
+        if (!taskTitle) {
+          throw new Error('taskTitle is required');
+        }
+
+        const taskId = `task_${randomUUID().slice(0, 8)}`;
+        const feedbackEntry = {
+          id: `fb_${randomUUID().slice(0, 8)}`,
+          taskId,
+          taskTitle,
+          coreGoalTitle,
+          detectedType: 'over_engineering',
+          isFalsePositive: true,
+          userReason: reason,
+          timestamp: Date.now(),
+        };
+
+        serverDriftFeedbackStore.push(feedbackEntry);
+        addCalibrationRule('DRIFT', taskId, `Tác vụ "${taskTitle}" được xác nhận là hợp lệ: ${reason}`);
+
+        const result = {
+          status: 'EXEMPTION_RECORDED',
+          message: `Đã lưu ngoại lệ cho "${taskTitle}". Lần kiểm tra tiếp theo sẽ KHÔNG bị BLOCK nhầm nữa.`,
+          exemption: feedbackEntry,
+          calibrationStats: getDriftCalibrationStats(),
+          activeCalibrationRules: getActiveCalibrationRules(),
         };
 
         return {
@@ -706,6 +824,21 @@ Bắt buộc trả về đúng JSON:
 
         const requestId = String(args.requestId || `req_${randomUUID().slice(0, 8)}`);
         let predictionId = String(args.predictionId || '').trim();
+        const isFalsePositiveDrift = Boolean(args.isFalsePositiveDrift);
+        const notes = typeof args.notes === 'string' ? args.notes : 'Recorded via MCP';
+
+        if (isFalsePositiveDrift) {
+          const feedbackEntry = {
+            id: `fb_${randomUUID().slice(0, 8)}`,
+            taskId: requestId,
+            taskTitle: notes,
+            detectedType: 'over_engineering',
+            isFalsePositive: true,
+            userReason: notes,
+            timestamp: Date.now(),
+          };
+          serverDriftFeedbackStore.push(feedbackEntry);
+        }
 
         if (!predictionId) {
           predictionId = `pred_${randomUUID().slice(0, 8)}`;

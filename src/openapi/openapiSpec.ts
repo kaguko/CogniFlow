@@ -225,6 +225,34 @@ export const openapiSpec = {
         },
       },
     },
+    '/api/v1/agent/guardrail/exemptions': {
+      get: {
+        summary: 'List Guardrail Exemptions & Calibration Rules',
+        description: 'Returns all active task exemptions marked as valid by developers to prevent false positive rabbit-hole detection.',
+        responses: { '200': { description: 'List of active exemptions and calibration stats' } },
+      },
+      post: {
+        summary: 'Record Guardrail Exemption (Not a Rabbit Hole)',
+        description: 'Adds an essential engineering task as an exemption into calibration memory so future checks do not BLOCK it.',
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  taskTitle: { type: 'string', example: 'Fix login bug' },
+                  coreGoalTitle: { type: 'string', example: 'Ship MVP' },
+                  reason: { type: 'string', example: 'Essential login fix needed for alpha testing' },
+                },
+                required: ['taskTitle'],
+              },
+            },
+          },
+        },
+        responses: { '201': { description: 'Exemption recorded' } },
+      },
+    },
     '/api/billing/plans': {
       get: {
         summary: 'List Billing Plans & Quotas',

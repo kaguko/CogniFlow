@@ -26,6 +26,7 @@ import {
 import { insertPredictionOutcome, insertPredictionSnapshot, getPredictionById } from '../db/predictions.ts';
 import { runBacktest, assertThresholds } from '../lib/backtest.ts';
 import { getOrCreateUserRecord } from '../db/rag.ts';
+import { smartCache } from '../utils/smartCacheRateLimitEngine.ts';
 
 export const agentRouter = Router();
 
@@ -151,13 +152,32 @@ agentRouter.post(
     const goalTitle = typeof req.body?.goalTitle === 'string' ? req.body.goalTitle.trim() : '';
     if (!goalTitle) return res.status(400).json({ error: 'goalTitle is required' });
 
+    const cacheKey = `agent_decompose:${goalTitle.toLowerCase()}:${JSON.stringify(req.body?.technicalContext || {})}`;
+    const cached = smartCache.get<any>(cacheKey);
+    if (cached.hit && cached.data) {
+      res.setHeader('X-Cache-Status', 'HIT');
+      return res.json({
+        contractVersion: 'agent.v1',
+        requestId: randomUUID(),
+        agentId: req.agentId,
+        goalTitle,
+        cached: true,
+        activeCalibrationRules: getActiveCalibrationRules(),
+        ...cached.data,
+      });
+    }
+    res.setHeader('X-Cache-Status', 'MISS');
+
     const requestId = randomUUID();
     const result = await generateAgentDecomposition(goalTitle, req.body?.technicalContext);
+    smartCache.set(cacheKey, result, 'simple');
+
     return res.json({
       contractVersion: 'agent.v1',
       requestId,
       agentId: req.agentId,
       goalTitle,
+      cached: false,
       activeCalibrationRules: getActiveCalibrationRules(),
       ...result,
     });
@@ -175,17 +195,78 @@ agentRouter.post(
       return res.status(400).json({ error: 'originalGoal and agentOutput are required' });
     }
 
+    // Default circuit breaker threshold: 65 (prevents false positives while strictly catching rabbit holes >= 75)
     const threshold = Number.isFinite(Number(req.body?.circuitBreakerThreshold))
       ? Math.min(100, Math.max(1, Number(req.body.circuitBreakerThreshold)))
-      : 40;
-    const semantic = buildSmartFallbackSemanticDrift(originalGoal, [{ id: 'agent-output', title: agentOutput }]);
+      : 65;
+
+    // Collect all system exemptions (historical user feedback + per-request exemptions)
+    const userExemptions = Array.isArray(req.body?.userExemptions) ? req.body.userExemptions : [];
+    const allExemptions = [
+      ...serverDriftFeedbackStore.filter((f) => f.isFalsePositive).map((f) => ({
+        taskId: f.taskId,
+        taskTitle: f.taskTitle,
+        reason: f.userReason,
+      })),
+      ...userExemptions.map((e: any) =>
+        typeof e === 'string'
+          ? { taskTitle: e, reason: 'Request exemption' }
+          : { taskId: e?.taskId, taskTitle: e?.taskTitle || e?.title || '', reason: e?.reason || 'Request exemption' }
+      ),
+    ];
+
+    const cacheKey = `agent_drift_check:${originalGoal.toLowerCase()}:${agentOutput.toLowerCase()}:${threshold}:ex_${allExemptions.length}`;
+    const cached = smartCache.get<any>(cacheKey);
+    if (cached.hit && cached.data) {
+      res.setHeader('X-Cache-Status', 'HIT');
+      return res.json({
+        ...cached.data,
+        requestId: randomUUID(),
+        agentId: req.agentId,
+      });
+    }
+    res.setHeader('X-Cache-Status', 'MISS');
+
+    const semantic = buildSmartFallbackSemanticDrift(
+      originalGoal,
+      [{ id: 'agent-output', title: agentOutput }],
+      allExemptions
+    );
+
     const goalTokens = getMeaningfulGoalTokens(originalGoal);
     const outputTokens = getMeaningfulGoalTokens(agentOutput);
     const sharedTokens = [...goalTokens].filter((token) => outputTokens.has(token)).length;
-    const overlapDrift = goalTokens.size > 0 && sharedTokens === 0 ? 60 : 0;
-    const rabbitHoleDrift = semantic.detectedRabbitHoles.length > 0 ? 40 : 0;
-    const driftScore = Math.min(100, Math.max(0, Math.max(overlapDrift, rabbitHoleDrift)));
-    const status = driftScore >= threshold ? 'BLOCK' : driftScore >= threshold / 2 ? 'WARN' : 'ALLOW';
+
+    // Check if task matches any active exemptions
+    const lowerOutput = agentOutput.toLowerCase();
+    const isExempted = allExemptions.some(
+      (e) => e.taskTitle && (lowerOutput.includes(e.taskTitle.toLowerCase()) || e.taskTitle.toLowerCase().includes(lowerOutput))
+    );
+
+    // Common delivery/bugfix/core implementation terms that inherently align with building/shipping software:
+    const coreDeliveryKeywords = [
+      'fix', 'bug', 'issue', 'login', 'auth', 'oauth', 'token', 'signup', 'api', 'route', 'endpoint',
+      'test', 'unit test', 'spec', 'build', 'ship', 'mvp', 'database', 'schema', 'migration', 'table',
+      'crud', 'checkout', 'payment', 'stripe', 'cart', 'order', 'profile', 'user', 'session', 'deploy',
+      'refactor', 'clean', 'lint', 'component', 'ui', 'form', 'validation', 'error', 'exception', 'cache'
+    ];
+    const isCoreDeliveryAction = coreDeliveryKeywords.some((kw) => lowerOutput.includes(kw));
+
+    let driftScore = 0;
+    if (isExempted) {
+      driftScore = 0;
+    } else if (semantic.detectedRabbitHoles.length > 0) {
+      // Detected real rabbit hole (over-engineering, premature optimization, reinventing the wheel, bikeshedding)
+      driftScore = 75;
+    } else if (sharedTokens > 0 || isCoreDeliveryAction) {
+      // Clear goal overlap or standard productive software engineering execution (e.g. "Fix login bug" for "Ship MVP")
+      driftScore = 15;
+    } else {
+      // Divergent action with no shared tokens and not an obvious core delivery task
+      driftScore = 50;
+    }
+
+    const status = driftScore >= threshold ? 'BLOCK' : driftScore >= 40 ? 'WARN' : 'ALLOW';
     const requestId = randomUUID();
     const circuitEval = evaluateAndTriggerCircuitBreaker({
       agentId: req.agentId,
@@ -196,16 +277,19 @@ agentRouter.post(
       recommendedAction: 'Thu hẹp hành động về mục tiêu cốt lõi trước khi tiếp tục',
     });
 
-    return res.json({
+    const responsePayload = {
       contractVersion: 'agent.v1',
       requestId,
       agentId: req.agentId,
       originalGoal,
+      agentOutput,
       driftScore,
       threshold,
       status,
       decision: status,
+      isExempted,
       detectedRabbitHoles: semantic.detectedRabbitHoles,
+      calibrationStats: getDriftCalibrationStats(),
       reason:
         status === 'BLOCK'
           ? 'Agent output has insufficient goal overlap or contains a known rabbit-hole pattern.'
@@ -217,9 +301,81 @@ agentRouter.post(
         circuitStatus: circuitEval.circuitStatus,
         reason: circuitEval.reason,
       },
-    });
+    };
+
+    smartCache.set(cacheKey, responsePayload, 'simple');
+    return res.json(responsePayload);
   }
 );
+
+// POST /api/v1/agent/guardrail/exemptions (or /feedback) - Flag false positive ("Đây KHÔNG phải rabbit-hole")
+export const handleRecordGuardrailExemption = (req: AgentRequest, res: Response) => {
+  const taskTitle = typeof req.body?.taskTitle === 'string' ? req.body.taskTitle.trim() : '';
+  if (!taskTitle) {
+    return res.status(400).json({ error: 'taskTitle is required' });
+  }
+
+  const taskId = typeof req.body?.taskId === 'string' && req.body.taskId ? req.body.taskId : `task_${randomUUID().slice(0, 8)}`;
+  const coreGoalTitle = typeof req.body?.coreGoalTitle === 'string' ? req.body.coreGoalTitle.trim() : undefined;
+  const userReason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : (req.body?.userReason || 'Flagged as valid task (not a rabbit hole)').trim();
+  const isFalsePositive = req.body?.isFalsePositive !== false;
+
+  const feedbackEntry = {
+    id: `fb_${randomUUID().slice(0, 8)}`,
+    taskId,
+    taskTitle,
+    coreGoalTitle,
+    detectedType: req.body?.detectedType || 'over_engineering',
+    isFalsePositive,
+    userReason,
+    timestamp: Date.now(),
+  };
+
+  serverDriftFeedbackStore.push(feedbackEntry);
+
+  if (isFalsePositive) {
+    addCalibrationRule(
+      'DRIFT',
+      taskId,
+      `Tác vụ "${taskTitle}" được xác nhận là hợp lệ và cần thiết: ${userReason}`
+    );
+  }
+
+  return res.status(201).json({
+    contractVersion: 'agent.v1',
+    status: 'EXEMPTION_RECORDED',
+    message: `Recorded exemption for "${taskTitle}". Future drift checks will NOT flag this task as a rabbit hole.`,
+    exemption: feedbackEntry,
+    calibrationStats: getDriftCalibrationStats(),
+    activeCalibrationRules: getActiveCalibrationRules(),
+  });
+};
+
+export const handleGetGuardrailExemptions = (_req: Request, res: Response) => {
+  const exemptions = serverDriftFeedbackStore.filter((f) => f.isFalsePositive);
+  return res.json({
+    contractVersion: 'agent.v1',
+    totalExemptions: exemptions.length,
+    exemptions,
+    calibrationStats: getDriftCalibrationStats(),
+    activeCalibrationRules: getActiveCalibrationRules(),
+  });
+};
+
+export const handleDeleteGuardrailExemption = (req: Request, res: Response) => {
+  const { id } = req.params;
+  const idx = serverDriftFeedbackStore.findIndex((f) => f.id === id || f.taskId === id);
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Exemption not found' });
+  }
+  const removed = serverDriftFeedbackStore.splice(idx, 1)[0];
+  return res.json({
+    contractVersion: 'agent.v1',
+    status: 'EXEMPTION_REMOVED',
+    removed,
+    calibrationStats: getDriftCalibrationStats(),
+  });
+};
 
 agentRouter.post(
   '/socratic-decision',
@@ -430,6 +586,11 @@ export const handleUpdateCircuitBreakerConfig = (req: Request, res: Response) =>
 };
 
 agentRouter.post('/outcomes', requireAgentAuth, handleRecordOutcome);
+agentRouter.post('/guardrail/exemptions', requireAgentAuth, handleRecordGuardrailExemption);
+agentRouter.post('/guardrail/feedback', requireAgentAuth, handleRecordGuardrailExemption);
+agentRouter.post('/guardrail/not-a-rabbit-hole', requireAgentAuth, handleRecordGuardrailExemption);
+agentRouter.get('/guardrail/exemptions', handleGetGuardrailExemptions);
+agentRouter.delete('/guardrail/exemptions/:id', requireAgentAuth, handleDeleteGuardrailExemption);
 agentRouter.get('/accuracy-score', handleGetAccuracyScore);
 agentRouter.get('/circuit-breaker/config', handleGetCircuitBreakerConfig);
 agentRouter.post('/circuit-breaker/config', requireAgentAuth, handleUpdateCircuitBreakerConfig);
