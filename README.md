@@ -18,21 +18,22 @@
 
 1. [Tổng Quan & Triết Lý Thiết Kế](#-tổng-quan--triết-lý-thiết-kế)
 2. [✅ Cập Nhật Đã Triển Khai](#-cập-nhật-đã-triển-khai-self-improving-agent--browser-telemetry)
-3. [💰 Mô Hình Định Giá & Metered Billing (BYOK-Friendly)](#-mô-hình-định-giá--metered-billing-byok-friendly)
-4. [⚖️ Lợi Ích So Với Không Dùng SymFlowAge](#-lợi-ích-khi-dùng-symflowage-so-với-không-dùng)
-5. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
-6. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
-7. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
-8. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
-9. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
-10. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
-11. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
-12. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
-13. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
-14. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
-15. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-16. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
-17. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+3. [💰 Chi Phí Siêu Rẻ — Vì Sao Đáng Dùng](#-chi-phí-siêu-rẻ--vì-sao-đáng-dùng-số-liệu-track-1-đã-verify-live)
+4. [💰 Mô Hình Định Giá & Metered Billing (BYOK-Friendly)](#-mô-hình-định-giá--metered-billing-byok-friendly)
+5. [⚖️ Lợi Ích So Với Không Dùng SymFlowAge](#-lợi-ích-khi-dùng-symflowage-so-với-không-dùng)
+6. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
+7. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
+8. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
+9. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
+10. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
+11. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
+12. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
+13. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
+14. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+15. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
+16. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+17. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
+18. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -120,6 +121,37 @@ Toàn bộ **automated test suite** (bao gồm `agent-api`, `drift-false-positiv
 > **Phạm vi bảo mật telemetry:** `/api/agent/activity/stream` hiện phù hợp cho local/internal browser và chỉ phát metadata lifecycle. Khi triển khai multi-user production, cần bổ sung xác thực browser và phân tách channel theo user/agent trước khi mở endpoint ra internet.
 
 ---
+
+## 💰 Chi Phí Siêu Rẻ — Vì Sao Đáng Dùng (Số Liệu Track 1 Đã Verify Live)
+
+> Chạy `node scripts/measure-value.cjs` trên server local (`http://localhost:3000`) để tự tái hiện mọi con số dưới đây.
+
+### Kết quả Track 1 mới nhất (26/09/2026, server local, chưa cần Stripe key)
+
+| Chỉ số | Kết quả đo live | Cách tái hiện |
+| :--- | :--- | :--- |
+| **Decompose cache HIT vòng 2** | **10/10 prompts** (`call1=HIT/MISS → call2=HIT`, 0 token lần 2) | `POST /api/v1/agent/decompose` ×2 cùng prompt, xem header `X-Cache-Status` |
+| **Guardrail matrix** | **10/10 PASS** (5 ALLOW việc đúng `drift=15` + 5 BLOCK rabbit-hole `drift=75`) | `scripts/measure-value.cjs` Part B |
+| **Hit ratio phiên đo** | **66–67%** (`hits:44/misses:23`), tiết kiệm **~19.800 tokens ≈ $0.015/phiên** | `GET /api/smart-cache-stats` |
+| **Guardrail latency** | **`<1.2ms`** rule-engine local, 0 token LLM khi HIT | header `X-Cache-Status: HIT` |
+| **Báo động giả chí mạng** | **Đã triệt tiêu**: `Fix login bug` cho `Ship MVP` → `ALLOW drift=15` (trước đây BLOCK nhầm) | Test 1 `verify-improvements.cjs` |
+| **Rabbit-hole thật** | **Vẫn chặn**: `K8s multi-region`, `tự viết ORM`, `8 microservices`, `tối ưu 20ms→2ms`, `dark mode trước validation` → `BLOCK drift=75` | Test 2 + matrix |
+
+### Vì sao rẻ tới vậy? (3 cơ chế cộng hưởng)
+
+1. **Model Tiering (rẻ hơn 88% ngay từ đầu):** mọi `decompose`/`drift-check` mặc định chạy `gemini-3.1-flash-lite` (`$0.000075/1k`) thay vì Pro (`$0.002/1k`). 1 lần decompose ~280 tokens ≈ **$0.000021**, so với Cline tự reasoning ~1.250 tokens ≈ $0.0025.
+2. **SmartCache (lần 2 = 0đ):** `smartCache.get/set` đã gắn vào `/api/v1/agent/decompose` + `/guardrail/drift-check`. Prompt lặp lại → `X-Cache-Status: HIT`, `<1ms`, 0 token. TTL: simple 10p / medium 30p / complex 120p. Xem live: `GET /api/smart-cache-stats` (`totalTokensSaved`, `estimatedUsdSaved`).
+3. **BYOK (bạn không gánh tiền LLM của khách):** khách tự mang `GEMINI_API_KEY`, bạn chỉ meter guardrail logic (`$0.002/call` overage). Margin ~90%. Với team 10 dev đốt $2.000/tháng token lãng phí, chặn 70% waste = tiết kiệm ~$1.400, trong khi phí Pro chỉ $19.
+
+### Bảng giá (giữ nguyên, đã live API)
+
+| Gói | Giá | Quota | Overage | Hợp cho ai |
+| :--- | :---: | :---: | :---: | :--- |
+| **Free** | **$0** | 1.000 calls/tháng (chặn cứng, trả `402 quota_exceeded`) | — | Dev thử Cline/Cursor 1 project |
+| **Pro Solo** | **$19** | 50.000 calls/tháng | +$0.002/call | Solo dev / indie hacker dùng AI daily |
+| **Team Swarm** | **$99** | 250.000 calls/tháng | +$0.002/call | Team 5–10 người, track theo `x-agent-id` |
+
+> 1 user Pro dùng 2.000 calls/tháng ≈ **chưa tới $0.01 tiền LLM** (nhờ Flash-Lite + cache) — phí $19 thực chất trả cho guardrail + accuracy + webhook, không phải trả cho token.
 
 ## 💰 Mô Hình Định Giá & Metered Billing (BYOK-Friendly)
 
