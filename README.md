@@ -18,20 +18,21 @@
 
 1. [Tổng Quan & Triết Lý Thiết Kế](#-tổng-quan--triết-lý-thiết-kế)
 2. [✅ Cập Nhật Đã Triển Khai](#-cập-nhật-đã-triển-khai-self-improving-agent--browser-telemetry)
-3. [⚖️ Lợi Ích So Với Không Dùng SymFlowAge](#-lợi-ích-khi-dùng-symflowage-so-với-không-dùng)
-4. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
-5. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
-6. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
-7. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
-8. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
-9. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
-10. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
-11. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
-12. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
-13. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
-14. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
-15. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
-16. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
+3. [💰 Mô Hình Định Giá & Metered Billing (BYOK-Friendly)](#-mô-hình-định-giá--metered-billing-byok-friendly)
+4. [⚖️ Lợi Ích So Với Không Dùng SymFlowAge](#-lợi-ích-khi-dùng-symflowage-so-với-không-dùng)
+5. [⚡ Hướng Dẫn Tích Hợp Nhanh (Quickstart Guide - 5 Phút)](#-hướng-dẫn-tích-hợp-nhanh-quickstart-guide---5-phút)
+6. [Mô Hình Phóng Đại Đa Tầng (Zoom In – Zoom Out)](#-mô-hình-phóng-đại-đa-tầng-zoom-in--zoom-out)
+7. [Tính Năng Nổi Bật Mới Nhất (Chuyên Biệt Cho Solo Dev & Indie Hacker)](#-tính-năng-nổi-bật-mới-nhất-chuyên-biệt-cho-solo-dev--indie-hacker)
+8. [Hệ Thống Tính Năng Toàn Diện](#-hệ-thống-tính-năng-toàn-diện)
+9. [Kiến Trúc Kỹ Thuật (Tech Stack)](#-kiến-trúc-kỹ-thuật-tech-stack)
+10. [Cấu Trúc Thư Mục Domain-Driven Clean Architecture](#-cấu-trúc-thư-mục-domain-driven-clean-architecture)
+11. [Tài Liệu API Endpoints & OpenAPI / Swagger UI](#-tài-liệu-api-endpoints--openapi--swagger-ui)
+12. [Cơ Chế Phòng Vệ Gemini Resilience Engine](#-cơ-chế-phòng-vệ-gemini-resilience-engine)
+13. [Hướng Dẫn Cài Đặt & Chạy Dự Án](#-hướng-dẫn-cài-đặt--chạy-dự-án)
+14. [Biến Môi Trường (Environment Variables)](#-biến-môi-trường-environment-variables)
+15. [Kiểm Thử & Đóng Gói (Build & Verification)](#-kiểm-thử--đóng-gói-build--verification)
+16. [📊 Báo Cáo Benchmark & Số Liệu Thực Tế (BENCHMARKS.md)](#-báo-cáo-benchmark--số-liệu-thực-tế-benchmarksmd)
+17. [Tác Giả & Bản Quyền (Author & Copyright)](#-tác-giả--bản-quyền-author--copyright)
 
 ---
 
@@ -93,16 +94,51 @@ SymFlowAge hiện đã hoàn thiện một vòng làm việc có thể quan sát
 
 10. **⚡ Kiến Trúc Xử Lý Tác Tử Nặng & Tần Số Cao (Heavy / High-Frequency Agent Architecture)**:
     * **WebSocket Duplex Streaming (`/ws/agent/stream`)**: Loại bỏ overhead bắt tay HTTP REST, giảm độ trễ từ $\sim 100\text{ms}$ xuống $< 5\text{ms}$/vi bước, giảm 90% Network I/O. Đo đạc thực tế đạt **8.269 duplex steps/giây**!
-    * **Hàng Đợi Bất Đồng Bộ & Decoupled Workers (`POST /api/v1/agent/async/enqueue`)**: Trả phản hồi xác nhận **Instant ACK &lt; 2ms** tức thời. Công nhân nền tính toán Drift Score và thẩm định vi bước mà không chặn Event Loop. Cơ chế Backpressure tự động xả tải an toàn khi chạm ngưỡng.
+    * **Hàng Đợi Bất Đồng Bộ & Decoupled Workers (`POST /api/v1/agent/async/enqueue`)**: Trả phản hồi xác nhận **Instant ACK < 2ms** tức thời. Công nhân nền tính toán Drift Score và thẩm định vi bước mà không chặn Event Loop. Cơ chế Backpressure tự động xả tải an toàn khi chạm ngưỡng.
     * **Bộ Nhớ Đệm Đa Tầng Write-Behind (Multi-Tiered Cache)**:
       * *Tier 1 (Local LRU Memory Cache)*: Tra cứu siêu tốc $< 0.5\text{ms}$, tỷ lệ Hit Rate đạt $99\%-100\%$.
       * *Tier 2 (Distributed Staged Store)*: Đồng bộ trạng thái phiên sau mỗi vi bước 5–15 phút.
       * *Tier 3 (Persistent DB Write-Behind Batcher)*: Gom nhóm ghi đĩa theo lô khi kết thúc phiên, giảm 95% áp lực đĩa (Zero Disk Thrashing).
     * Bộ test tự động: `tests/heavy-agent.spec.ts` (5/5 tests passed).
 
-Toàn bộ **27/27 automated tests** đều vượt qua tuyệt đối (100% Pass Rate).
+11. **💾 Smart Cache Tiết Kiệm 100% Token Cho Agent (`/decompose` & `/guardrail/drift-check`)**:
+    * Gắn bộ đệm thông minh (Smart Semantic Cache) vào các API trọng yếu của Agent (`/api/v1/agent/decompose` và `/api/v1/agent/guardrail/drift-check`).
+    * Khi Cline, Cursor hay Claude gọi lại cùng một mục tiêu hoặc tác vụ, hệ thống trả về header **`X-Cache-Status: HIT`** với độ trễ **$< 1\text{ms}$** và **0 token LLM tiêu tốn**.
+    * Theo dõi trực tiếp số token và chi phí tiết kiệm được qua telemetry endpoint `GET /api/smart-cache-stats`.
+
+12. **🛡️ Triệt Tiêu Báo Động Giả (False-Positive Elimination) Cho Core Delivery Tasks**:
+    * Khắc phục hoàn toàn lỗi chặn nhầm các tác vụ thiết yếu (ví dụ: mục tiêu `"Ship MVP"` kèm tác vụ `"Fix login bug"` trước đây bị BLOCK do đối chiếu từ khóa thô).
+    * Nhận diện thông minh các **Hành vi Lập trình Hạt nhân** (`fix`, `login`, `bug`, `auth`, `api`, `test`, `migration`, `crud`, `checkout`, `deploy`, `refactor`, `schema`, `component`) $\rightarrow$ trả về `driftScore = 15` (`ALLOW`).
+    * Nâng ngưỡng `circuitBreakerThreshold` mặc định từ `40` lên **`65`**, chỉ kích hoạt ngắt mạch khi phát hiện bẫy kỹ thuật thực sự ($\ge 75\%$).
+
+13. **🎯 Bộ API & MCP Tool "Đây KHÔNG phải Rabbit Hole" (Exemption & Calibration Memory)**:
+    * REST API: `POST /api/v1/agent/guardrail/exemptions` (cùng alias `/feedback`, `/not-a-rabbit-hole`), `GET /api/v1/agent/guardrail/exemptions`, `DELETE /api/v1/agent/guardrail/exemptions/:id`.
+    * MCP Tool: `symflowage_report_false_positive` cho phép AI Agent báo cáo ngoại lệ trực tiếp từ IDE để Calibration Memory tự học và không bao giờ BLOCK nhầm nữa.
+
+Toàn bộ **automated test suite** (bao gồm `agent-api`, `drift-false-positive-and-cache`, `drift-score-golden`, `rabbit-hole-golden`, `heavy-agent`) đều vượt qua tuyệt đối (100% Pass Rate).
 
 > **Phạm vi bảo mật telemetry:** `/api/agent/activity/stream` hiện phù hợp cho local/internal browser và chỉ phát metadata lifecycle. Khi triển khai multi-user production, cần bổ sung xác thực browser và phân tách channel theo user/agent trước khi mở endpoint ra internet.
+
+---
+
+## 💰 Mô Hình Định Giá & Metered Billing (BYOK-Friendly)
+
+SymFlowAge hoạt động theo mô hình **BYOK (Bring Your Own Key)**: Khách hàng tự cung cấp `GEMINI_API_KEY`, SymFlowAge chỉ quản trị và đo lường số lượt gọi Guardrail / Contextual Planner / Socratic Decision:
+
+| Gói Dịch Vụ | Giá (USD/tháng) | Hạn Mức Cuộc Gọi | Vượt Hạn Mức (Overage) | Tính Năng Nổi Bật |
+| :--- | :---: | :---: | :---: | :--- |
+| **Free Tier** | **$0** | 1,000 calls/tháng | Chặn khi hết quota | 1 project, full MCP & REST API, Smart Cache |
+| **Pro Solo** | **$19** | 50,000 calls/tháng | +$0.002 / call | Lịch sử Accuracy 90 ngày, Slack/Discord Webhook, Calibration Memory vô hạn |
+| **Team Swarm** | **$99** | 250,000 calls/tháng | +$0.002 / call | Theo dõi theo `x-agent-id`, Dashboard độ trôi dạt toàn đội, Hỗ trợ ưu tiên |
+
+### Các API Quản Trị Thanh Toán & Quota:
+* `GET /api/billing/plans`: Danh mục bảng giá và chi tiết hạn ngạch.
+* `POST /api/billing/api-keys`: Cấp phát M2M API Key theo Tenant (`sk_live_...`) có kiểm soát hạn ngạch và cấu hình MCP tự động.
+* `GET /api/billing/usage?tenantId=...`: Tra cứu dung lượng đã dùng, quota còn lại và phí vượt mức.
+* `POST /api/billing/checkout`: Khởi tạo phiên thanh toán Stripe Checkout Subscription.
+* `POST /api/billing/webhook`: Xử lý webhook Stripe tự động kích hoạt hoặc hủy gói subscription.
+
+---
 
 ## ⚖️ Lợi Ích Khi Dùng SymFlowAge So Với Không Dùng
 
@@ -165,8 +201,9 @@ SymFlowAge cung cấp 4 phương thức tích hợp sản xuất sẵn sàng cho
 ```
 
 #### Các MCP Tools sẵn có:
-- `symflowage_decompose_task`: Phân rã tác vụ phức tạp thành vi bước 5-15 phút.
-- `symflowage_guardrail_drift_check`: Kiểm tra trôi dạt mục tiêu (Goal Drift) trước khi thực thi action.
+- `symflowage_decompose_task`: Phân rã tác vụ phức tạp thành vi bước 5-15 phút (hỗ trợ Smart Cache tự động).
+- `symflowage_guardrail_drift_check`: Kiểm tra trôi dạt mục tiêu (Goal Drift) trước khi thực thi action với Smart Cache và nhận diện hành vi lập trình cốt lõi.
+- `symflowage_report_false_positive`: Báo cáo "Đây KHÔNG phải Rabbit Hole" để lưu ngoại lệ vào Calibration Memory trực tiếp từ IDE.
 - `symflowage_report_outcome`: Gửi báo cáo kết quả thực tế (`SUCCESS`, `DRIFT`, `CRASH`, `ABANDONED`) để tối ưu hóa độ chính xác dự báo AI.
 - `symflowage_record_outcome`: Ghi nhận đường thực thi (`optimal`, `drift`, `bottleneck`, `crash`) cho backtesting.
 - `symflowage_configure_circuit_breaker`: Thiết lập ngưỡng Drift Score và cấu hình Outbound Webhook.
@@ -601,7 +638,44 @@ Phân rã mục tiêu của Agent thành các vi bước 5-15 phút.
 }
 ```
 
-Response có contract ổn định gồm `contractVersion`, `requestId`, `agentId`, `goalTitle`, `microSteps` và `leanAdvice`.
+Response có contract ổn định gồm `contractVersion`, `requestId`, `agentId`, `goalTitle`, `microSteps` và `leanAdvice`. Hỗ trợ Smart Cache tự động (trả header `X-Cache-Status: HIT` ở lần gọi thứ 2).
+
+### `POST /api/v1/agent/guardrail/drift-check`
+
+Đánh giá rào chắn ngữ nghĩa và nguy cơ sa đà bẫy kỹ thuật (Rabbit Hole) trước khi Agent bắt đầu viết code:
+
+```json
+{
+  "originalGoal": "Ship MVP SaaS trong 7 ngày",
+  "agentOutput": "Fix login bug và ổn định token session",
+  "circuitBreakerThreshold": 65
+}
+```
+
+* **Cơ chế xử lý**:
+  - Nhận diện các hành vi lập trình cốt lõi (`fix`, `login`, `bug`, `auth`, `test`, `crud`, `deploy`,...) $\rightarrow$ Trả về `driftScore = 15`, `decision = "ALLOW"`.
+  - Kiểm tra danh sách ngoại lệ đã lưu trong Calibration Memory $\rightarrow$ Nếu khớp, trả về `driftScore = 0`, `isExempted = true`, `decision = "ALLOW"`.
+  - Nếu phát hiện bẫy kỹ thuật thực sự (Kubernetes, microservices không traffic, custom ORM,...) $\rightarrow$ Trả về `driftScore = 75`, `decision = "BLOCK"`.
+  - Tích hợp Smart Cache: Lần gọi lặp lại trả kết quả tức thì `< 1ms` với `X-Cache-Status: HIT`.
+
+### `POST /api/v1/agent/guardrail/exemptions` (Báo "Đây KHÔNG phải Rabbit Hole")
+
+Gửi ngoại lệ xác thực từ kỹ sư để nạp vào Calibration Memory, đảm bảo các lần drift check tiếp theo không bao giờ BLOCK nhầm:
+
+```json
+{
+  "taskTitle": "Tự viết micro parser nhị phân cho giao thức telemetry nội bộ",
+  "coreGoalTitle": "Ship Telemetry MVP",
+  "reason": "Yêu cầu kỹ thuật đặc thù đã được phê duyệt",
+  "isFalsePositive": true
+}
+```
+
+Response trả về: `201 Created` kèm `status: "EXEMPTION_RECORDED"` và bảng thống kê `calibrationStats`.
+
+### `GET /api/v1/agent/guardrail/exemptions`
+
+Liệt kê danh sách tất cả các quy tắc ngoại lệ đang có hiệu lực và tỷ lệ chính xác của bộ lọc.
 
 ### `POST /api/outcomes` & `POST /api/v1/agent/outcomes` (Feedback Loop)
 
