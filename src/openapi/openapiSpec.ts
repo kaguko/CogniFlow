@@ -225,6 +225,44 @@ export const openapiSpec = {
         },
       },
     },
+    '/api/billing/plans': {
+      get: {
+        summary: 'List Billing Plans & Quotas',
+        responses: { '200': { description: 'Pricing catalog' } },
+      },
+    },
+    '/api/billing/api-keys': {
+      post: {
+        summary: 'Issue Metered M2M API Key (BYOK-friendly)',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, name: { type: 'string' } } } } },
+        },
+        responses: { '201': { description: 'API key issued with MCP config' } },
+      },
+    },
+    '/api/billing/usage': {
+      get: {
+        summary: 'Get Tenant Usage & Quota',
+        responses: { '200': { description: 'Usage summary' } },
+      },
+    },
+    '/api/billing/checkout': {
+      post: {
+        summary: 'Create Stripe Checkout Session',
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object', properties: { email: { type: 'string' }, planId: { type: 'string' } } } } },
+        },
+        responses: { '200': { description: 'Checkout URL (live or mock)' } },
+      },
+    },
+    '/api/billing/webhook': {
+      post: {
+        summary: 'Stripe Webhook (Idempotent)',
+        responses: { '200': { description: 'Event received' } },
+      },
+    },
     '/api/v1/agent/circuit-breaker/config': {
       get: {
         summary: 'Get Circuit Breaker Configuration',

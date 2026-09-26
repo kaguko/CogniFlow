@@ -1,7 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
+import { resolveTenantByRawKey, recordUsage, checkQuota } from '../billing/billingStore.ts';
 
 export interface AgentRequest extends Request {
   agentId?: string;
+  tenantId?: string;
 }
 
 export function requireAgentAuth(req: AgentRequest, res: Response, next: NextFunction) {
@@ -9,13 +11,37 @@ export function requireAgentAuth(req: AgentRequest, res: Response, next: NextFun
   const authorization = req.header('authorization');
   const token = authorization?.startsWith('Bearer ') ? authorization.slice(7) : '';
 
+  if (!token) {
+    return res.status(401).json({ error: 'invalid_agent_credentials' });
+  }
+
+  // 1. Metered per-tenant key (sk_live_...) - primary monetization path
+  const tenant = resolveTenantByRawKey(token);
+  if (tenant) {
+    const quota = checkQuota(tenant.id);
+    if (!quota.allowed) {
+      return res.status(402).json({
+        error: 'quota_exceeded',
+        message: `Monthly quota exhausted (${quota.summary.used}/${quota.summary.monthlyQuota}). Upgrade at /pricing.`,
+        usage: quota.summary,
+      });
+    }
+    req.tenantId = tenant.id;
+    req.agentId = req.header('x-agent-id') || 'anonymous-agent';
+    recordUsage(tenant.id, req.path || req.url);
+    res.setHeader('X-Quota-Remaining', String(quota.summary.remaining));
+    res.setHeader('X-Tenant-Plan', quota.summary.planId);
+    return next();
+  }
+
+  // 2. Legacy single-key path (backward compatible: SYMFLOWAGE_M2M_API_KEY / test-agent-key)
   if (!configuredKey) {
     return res.status(503).json({
       error: 'agent_api_not_configured',
       message: 'Set SYMFLOWAGE_M2M_API_KEY before enabling the versioned agent API.',
     });
   }
-  if (!token || token !== configuredKey) {
+  if (token !== configuredKey) {
     return res.status(401).json({ error: 'invalid_agent_credentials' });
   }
 

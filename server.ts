@@ -16,11 +16,16 @@ import { goalsRouter } from './src/routes/goalsRoutes.ts';
 import { decisionRouter } from './src/routes/decisionRoutes.ts';
 import { systemRouter } from './src/routes/systemRoutes.ts';
 
+import { billingRouter } from './src/routes/billingRoutes.ts';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = serverConfig.port;
+
+// Stripe webhook needs raw body for signature verification - mount before express.json
+app.use('/api/billing/webhook', express.raw({ type: 'application/json' }));
 
 app.use(express.json({ limit: '10mb' }));
 
@@ -32,6 +37,7 @@ mountMcpRoutes(app);
 
 // Mount Modular Express Routers
 app.use('/api/v1/agent', agentRouter);
+app.use('/api/billing', billingRouter);
 app.use('/api/notes', notesRouter);
 app.use('/api/predict', predictRouter);
 app.use('/api/goals', goalsRouter);
