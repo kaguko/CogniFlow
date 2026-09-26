@@ -257,6 +257,7 @@ agentRouter.post(
       driftScore = 0;
     } else if (semantic.detectedRabbitHoles.length > 0) {
       // Detected real rabbit hole (over-engineering, premature optimization, reinventing the wheel, bikeshedding)
+      // takes precedence over generic delivery keywords (e.g. "query ... load test" contains "query" but is premature optimization)
       driftScore = 75;
     } else if (sharedTokens > 0 || isCoreDeliveryAction) {
       // Clear goal overlap or standard productive software engineering execution (e.g. "Fix login bug" for "Ship MVP")
